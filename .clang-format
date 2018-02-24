@@ -1,0 +1,4 @@
+BasedOnStyle: Mozilla
+Standard: Cpp11
+Cpp11BracedListStyle: true
+ColumnLimit: 100

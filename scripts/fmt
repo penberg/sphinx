@@ -1,0 +1,3 @@
+#!/bin/sh
+
+find sphinxd/ -name "*.h" -o -name "*.cpp" | xargs -n 1 clang-format -i
