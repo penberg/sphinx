@@ -175,7 +175,7 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
     }
     case Parser::State::CmdSet: {
       size_t data_block_size = parser._blob_size + 2;
-      if (msg.size() < data_block_size) {
+      if (msg.size() < (nr_consumed + data_block_size)) {
         nr_consumed = 0;
         break;
       }
