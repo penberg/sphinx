@@ -140,7 +140,6 @@ Server::recv(Connection& conn,
     _reactor.close(sock);
     return;
   }
-  size_t nr_consumed_total = 0;
   if (!conn._rx_buffer.is_empty()) {
     conn._rx_buffer.append(msg);
     msg = conn._rx_buffer.string_view();
@@ -155,7 +154,6 @@ Server::recv(Connection& conn,
       conn._rx_buffer.append(msg);
       break;
     }
-    nr_consumed_total += nr_consumed;
     msg.remove_prefix(nr_consumed);
     if (!conn._rx_buffer.is_empty()) {
       conn._rx_buffer.remove_prefix(nr_consumed);
