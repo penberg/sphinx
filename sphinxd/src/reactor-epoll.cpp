@@ -144,7 +144,8 @@ TcpSocket::on_read_event()
   if (nr < 0) {
     throw std::system_error(errno, std::system_category(), "recv");
   }
-  _recv_fn(this->shared_from_this(), std::string_view{rx_buf.data(), std::string_view::size_type(nr)});
+  _recv_fn(this->shared_from_this(),
+           std::string_view{rx_buf.data(), std::string_view::size_type(nr)});
 }
 
 void
