@@ -187,6 +187,7 @@ Reactor::close(std::shared_ptr<TcpSocket> socket)
       throw std::system_error(errno, std::system_category(), "close");
     }
   }
+  ::close(socket->sockfd());
   _tcp_sockets.erase(socket);
 }
 
