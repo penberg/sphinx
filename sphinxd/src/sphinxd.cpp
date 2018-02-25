@@ -140,22 +140,30 @@ Server::recv(Connection& conn,
     _reactor.close(sock);
     return;
   }
-  if (!conn._rx_buffer.is_empty()) {
+  if (conn._rx_buffer.is_empty()) {
+    for (;;) {
+      if (msg.find('\n') == std::string_view::npos) {
+        conn._rx_buffer.append(msg);
+        break;
+      }
+      size_t nr_consumed = process_one(sock, msg);
+      if (!nr_consumed) {
+        conn._rx_buffer.append(msg);
+        break;
+      }
+      msg.remove_prefix(nr_consumed);
+    }
+  } else {
     conn._rx_buffer.append(msg);
-    msg = conn._rx_buffer.string_view();
-  }
-  for (;;) {
-    if (msg.find('\n') == std::string_view::npos) {
-      conn._rx_buffer.append(msg);
-      break;
-    }
-    size_t nr_consumed = process_one(sock, msg);
-    if (!nr_consumed) {
-      conn._rx_buffer.append(msg);
-      break;
-    }
-    msg.remove_prefix(nr_consumed);
-    if (!conn._rx_buffer.is_empty()) {
+    for (;;) {
+      msg = conn._rx_buffer.string_view();
+      if (msg.find('\n') == std::string_view::npos) {
+        break;
+      }
+      size_t nr_consumed = process_one(sock, msg);
+      if (!nr_consumed) {
+        break;
+      }
       conn._rx_buffer.remove_prefix(nr_consumed);
     }
   }
