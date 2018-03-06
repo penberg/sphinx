@@ -19,6 +19,7 @@ limitations under the License.
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <signal.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -83,6 +84,8 @@ make_tcp_listener(const std::string& iface, int port, int backlog, TcpAcceptFn&&
     if (sockfd < 0) {
       continue;
     }
+    int one = 1;
+    ::setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &one, sizeof(one));
     if (::bind(sockfd, rp->ai_addr, rp->ai_addrlen) < 0) {
       ::close(sockfd);
       continue;
@@ -102,6 +105,11 @@ TcpSocket::TcpSocket(int sockfd, TcpRecvFn&& recv_fn)
   : _sockfd{sockfd}
   , _recv_fn{recv_fn}
 {
+}
+
+TcpSocket::~TcpSocket()
+{
+  ::close(_sockfd);
 }
 
 void
@@ -169,14 +177,70 @@ Reactor::recv(std::shared_ptr<TcpSocket>&& socket)
   _tcp_sockets.emplace(std::move(socket));
 }
 
-Reactor::Reactor()
+pthread_t Reactor::_pthread_ids[max_nr_threads];
+std::atomic<bool> Reactor::_thread_is_sleeping[max_nr_threads];
+sphinx::spsc::Queue<void*, 256> Reactor::_msg_queues[max_nr_threads][max_nr_threads];
+
+void
+handler(int sig, siginfo_t* siginfo, void* data)
 {
+}
+
+Reactor::Reactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn)
+  : _thread_id{thread_id}
+  , _nr_threads{nr_threads}
+  , _on_message_fn{on_message_fn}
+{
+  sigset_t mask;
+  sigemptyset(&mask);
+  struct sigaction sa;
+  sa.sa_sigaction = handler;
+  sa.sa_mask = mask;
+  sa.sa_flags = SA_SIGINFO | SA_RESTART;
+  if (::sigaction(SIGUSR1, &sa, nullptr) < 0) {
+    throw std::system_error(errno, std::system_category(), "sigaction");
+  }
+
+  sigaddset(&mask, SIGUSR1);
+  if (::pthread_sigmask(SIG_BLOCK, &mask, NULL) < 0) {
+    throw std::system_error(errno, std::system_category(), "pthread_sigmask");
+  }
+  _thread_is_sleeping[_thread_id].store(false, std::memory_order_seq_cst);
+  _pthread_ids[_thread_id] = pthread_self();
   _epollfd = ::epoll_create1(0);
 }
 
 Reactor::~Reactor()
 {
   ::close(_epollfd);
+}
+
+size_t
+Reactor::thread_id() const
+{
+  return _thread_id;
+}
+
+size_t
+Reactor::nr_threads() const
+{
+  return _nr_threads;
+}
+
+bool
+Reactor::send_msg(size_t remote_id, void* msg)
+{
+  if (remote_id == _thread_id) {
+    throw std::invalid_argument("Attempting to send message to self");
+  }
+  auto& queue = _msg_queues[remote_id][_thread_id];
+  if (!queue.try_to_emplace(msg)) {
+    return false;
+  }
+  if (_thread_is_sleeping[remote_id].load(std::memory_order_seq_cst)) {
+    wake_up(remote_id);
+  }
+  return true;
 }
 
 void
@@ -190,7 +254,6 @@ Reactor::close(std::shared_ptr<TcpSocket> socket)
       throw std::system_error(errno, std::system_category(), "close");
     }
   }
-  ::close(socket->sockfd());
   _tcp_sockets.erase(socket);
 }
 
@@ -207,8 +270,14 @@ Reactor::run()
     }
   }
   for (;;) {
-    int nr_events = ::epoll_wait(_epollfd, events.data(), events.size(), -1);
+    _thread_is_sleeping[_thread_id].store(true, std::memory_order_seq_cst);
+    poll_messages();
+    sigset_t sigmask;
+    sigemptyset(&sigmask);
+    int nr_events = ::epoll_pwait(_epollfd, events.data(), events.size(), -1, &sigmask);
+    _thread_is_sleeping[_thread_id].store(false, std::memory_order_seq_cst);
     if (nr_events == -1 && errno == EINTR) {
+      poll_messages();
       continue;
     }
     if (nr_events < 0) {
@@ -220,6 +289,32 @@ Reactor::run()
       if (listener) {
         listener->on_read_event();
       }
+    }
+    poll_messages();
+  }
+}
+
+void
+Reactor::wake_up(size_t thread_id)
+{
+  ::pthread_kill(_pthread_ids[thread_id], SIGUSR1);
+}
+
+void
+Reactor::poll_messages()
+{
+  for (size_t other = 0; other < _nr_threads; other++) {
+    if (other == _thread_id) {
+      continue;
+    }
+    auto& queue = _msg_queues[_thread_id][other];
+    for (;;) {
+      auto* msg = queue.front();
+      if (!msg) {
+        break;
+      }
+      _on_message_fn(*msg);
+      queue.pop();
     }
   }
 }

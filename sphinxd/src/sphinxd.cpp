@@ -91,10 +91,11 @@ class Server
   sphinx::logmem::Log _log;
 
 public:
-  Server(const sphinx::logmem::LogConfig& log_cfg);
+  Server(const sphinx::logmem::LogConfig& log_cfg, size_t thread_id, size_t nr_threads);
   void serve(const Args& args);
 
 private:
+  void on_message(void* data);
   void accept(int sockfd);
   void recv(Connection& conn,
             std::shared_ptr<sphinx::reactor::TcpSocket> sock,
@@ -102,8 +103,9 @@ private:
   size_t process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::string_view msg);
 };
 
-Server::Server(const sphinx::logmem::LogConfig& log_cfg)
-  : _log{log_cfg}
+Server::Server(const sphinx::logmem::LogConfig& log_cfg, size_t thread_id, size_t nr_threads)
+  : _reactor{thread_id, nr_threads, [this](void* data) { this->on_message(data); }}
+  , _log{log_cfg}
 {
 }
 
@@ -115,6 +117,11 @@ Server::serve(const Args& args)
     args.listen_addr, args.tcp_port, args.listen_backlog, std::move(accept_fn));
   _reactor.accept(std::move(listener));
   _reactor.run();
+}
+
+void
+Server::on_message(void* data)
+{
 }
 
 void
@@ -320,7 +327,7 @@ main(int argc, char* argv[])
     log_cfg.segment_size = args.segment_size * 1024 * 1024;
     log_cfg.memory_ptr = reinterpret_cast<char*>(memory.addr());
     log_cfg.memory_size = memory.size();
-    Server server{log_cfg};
+    Server server{log_cfg, 0, 1};
     server.serve(args);
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << std::endl;

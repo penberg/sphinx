@@ -16,6 +16,8 @@ limitations under the License.
 
 #pragma once
 
+#include <sphinx/spsc_queue.h>
+
 #include <functional>
 #include <memory>
 #include <set>
@@ -64,6 +66,7 @@ class TcpSocket
 
 public:
   explicit TcpSocket(int sockfd, TcpRecvFn&& recv_fn);
+  ~TcpSocket();
   void set_tcp_nodelay(bool nodelay);
   void send(const char* msg, size_t len);
   int sockfd() const;
@@ -73,18 +76,36 @@ private:
   void recv();
 };
 
+using OnMessageFn = std::function<void(void*)>;
+
+constexpr int max_nr_threads = 64;
+
 class Reactor
 {
+  static pthread_t _pthread_ids[max_nr_threads];
+  static std::atomic<bool> _thread_is_sleeping[max_nr_threads];
+  static sphinx::spsc::Queue<void*, 256> _msg_queues[max_nr_threads][max_nr_threads];
+
+  size_t _thread_id;
+  size_t _nr_threads;
   int _epollfd;
   std::vector<std::unique_ptr<TcpListener>> _tcp_listeners;
   std::set<std::shared_ptr<TcpSocket>> _tcp_sockets;
+  OnMessageFn _on_message_fn;
 
 public:
-  Reactor();
+  Reactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn);
   ~Reactor();
+  size_t thread_id() const;
+  size_t nr_threads() const;
+  bool send_msg(size_t thread, void* data);
   void accept(std::unique_ptr<TcpListener>&& listener);
   void recv(std::shared_ptr<TcpSocket>&& socket);
   void close(std::shared_ptr<TcpSocket> socket);
   void run();
+
+private:
+  void wake_up(size_t thread_id);
+  void poll_messages();
 };
 }

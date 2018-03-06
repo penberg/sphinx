@@ -20,6 +20,7 @@ add_executable(sphinxd
     ${SYSTEM_SOURCES}
     ${RAGEL_protocol_OUTPUTS}
 )
+target_link_libraries(sphinxd pthread)
 
 add_executable(sphinxd_tests
     src/logmem.cpp
