@@ -271,14 +271,24 @@ Reactor::run()
     }
   }
   for (;;) {
-    _thread_is_sleeping[_thread_id].store(true, std::memory_order_seq_cst);
-    poll_messages();
-    sigset_t sigmask;
-    sigemptyset(&sigmask);
-    int nr_events = ::epoll_pwait(_epollfd, events.data(), events.size(), -1, &sigmask);
-    _thread_is_sleeping[_thread_id].store(false, std::memory_order_seq_cst);
+    int nr_events = 0;
+    if (poll_messages()) {
+      // We had messages, speculate that there's more work in sockets:
+      nr_events = ::epoll_wait(_epollfd, events.data(), events.size(), 0);
+    } else {
+      // No messages, attempt to sleep:
+      _thread_is_sleeping[_thread_id].store(true, std::memory_order_seq_cst);
+      if (has_messages()) {
+        // Raced with producers, restart:
+        _thread_is_sleeping[_thread_id].store(false, std::memory_order_seq_cst);
+        continue;
+      }
+      sigset_t sigmask;
+      sigemptyset(&sigmask);
+      nr_events = ::epoll_pwait(_epollfd, events.data(), events.size(), -1, &sigmask);
+      _thread_is_sleeping[_thread_id].store(false, std::memory_order_seq_cst);
+    }
     if (nr_events == -1 && errno == EINTR) {
-      poll_messages();
       continue;
     }
     if (nr_events < 0) {
@@ -291,7 +301,6 @@ Reactor::run()
         listener->on_read_event();
       }
     }
-    poll_messages();
   }
 }
 
@@ -301,8 +310,8 @@ Reactor::wake_up(size_t thread_id)
   ::pthread_kill(_pthread_ids[thread_id], SIGUSR1);
 }
 
-void
-Reactor::poll_messages()
+bool
+Reactor::has_messages() const
 {
   for (size_t other = 0; other < _nr_threads; other++) {
     if (other == _thread_id) {
@@ -314,9 +323,31 @@ Reactor::poll_messages()
       if (!msg) {
         break;
       }
+      return true;
+    }
+  }
+  return false;
+}
+
+bool
+Reactor::poll_messages()
+{
+  bool has_messages = false;
+  for (size_t other = 0; other < _nr_threads; other++) {
+    if (other == _thread_id) {
+      continue;
+    }
+    auto& queue = _msg_queues[_thread_id][other];
+    for (;;) {
+      auto* msg = queue.front();
+      if (!msg) {
+        break;
+      }
+      has_messages |= true;
       _on_message_fn(*msg);
       queue.pop();
     }
   }
+  return has_messages;
 }
 }

@@ -106,6 +106,7 @@ public:
 
 private:
   void wake_up(size_t thread_id);
-  void poll_messages();
+  bool has_messages() const;
+  bool poll_messages();
 };
 }
