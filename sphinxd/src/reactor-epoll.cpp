@@ -116,7 +116,10 @@ TcpSocket::set_tcp_nodelay(bool nodelay)
 void
 TcpSocket::send(const char* msg, size_t len)
 {
-  ssize_t nr = ::send(_sockfd, msg, len, MSG_DONTWAIT);
+  ssize_t nr = ::send(_sockfd, msg, len, MSG_NOSIGNAL | MSG_DONTWAIT);
+  if ((nr < 0) && (errno == ECONNRESET || errno == EPIPE)) {
+    return;
+  }
   if (nr < 0) {
     throw std::system_error(errno, std::system_category(), "send");
   }
