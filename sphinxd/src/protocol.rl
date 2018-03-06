@@ -46,7 +46,7 @@ exptime = number %{ _expiration = _number; };
 
 bytes = number %{ _blob_size = _number; };
 
-set = "set" space key space flags space exptime space bytes crlf >blob_start @{ _state = State::CmdSet; };
+set = "set" space key space flags space exptime space bytes space? crlf >blob_start @{ _state = State::CmdSet; };
 
 get = "get" space key crlf @{ _state = State::CmdGet; };
 
