@@ -14,12 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+#include <MurmurHash3.h>
 #include <sphinx/logmem.h>
 #include <sphinx/memory.h>
 #include <sphinx/protocol.h>
 #include <sphinx/reactor.h>
 
+#include <cassert> // FIXME
 #include <iostream>
+#include <thread>
+#include <vector>
 
 #include <getopt.h>
 #include <libgen.h>
@@ -35,6 +39,7 @@ static constexpr const char* DEFAULT_LISTEN_ADDR = "0.0.0.0";
 static constexpr int DEFAULT_MEMORY_LIMIT = 64;
 static constexpr int DEFAULT_SEGMENT_SIZE = 2;
 static constexpr int DEFAULT_LISTEN_BACKLOG = 1024;
+static constexpr int DEFAULT_NR_THREADS = 4;
 
 struct Args
 {
@@ -43,6 +48,7 @@ struct Args
   int memory_limit = DEFAULT_MEMORY_LIMIT; /* in MB */
   int segment_size = DEFAULT_SEGMENT_SIZE; /* in MB */
   int listen_backlog = DEFAULT_LISTEN_BACKLOG;
+  int nr_threads = DEFAULT_NR_THREADS;
 };
 
 class Buffer
@@ -80,6 +86,24 @@ Buffer::string_view() const
   return std::string_view{_data.data(), _data.size()};
 }
 
+enum class Opcode
+{
+  Set,
+  SetOk,
+  SetErrorOutOfMemory,
+  Get,
+  GetOk,
+};
+
+struct Command
+{
+  size_t thread_id;
+  Opcode op;
+  std::string key;
+  std::optional<std::string> blob;
+  std::shared_ptr<sphinx::reactor::TcpSocket> sock;
+};
+
 struct Connection
 {
   Buffer _rx_buffer;
@@ -101,6 +125,7 @@ private:
             std::shared_ptr<sphinx::reactor::TcpSocket> sock,
             std::string_view msg);
   size_t process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::string_view msg);
+  size_t find_target(std::string_view key) const;
 };
 
 Server::Server(const sphinx::logmem::LogConfig& log_cfg, size_t thread_id, size_t nr_threads)
@@ -122,6 +147,56 @@ Server::serve(const Args& args)
 void
 Server::on_message(void* data)
 {
+  auto* cmd = reinterpret_cast<Command*>(data);
+  switch (cmd->op) {
+    case Opcode::Set: {
+      if (this->_log.append(cmd->key, *cmd->blob)) {
+        cmd->op = Opcode::SetOk;
+      } else {
+        cmd->op = Opcode::SetErrorOutOfMemory;
+      }
+      assert(_reactor.send_msg(cmd->thread_id, cmd));
+      break;
+    }
+    case Opcode::SetOk: {
+      static std::string response{"STORED\r\n"};
+      cmd->sock->send(response.c_str(), response.size());
+      delete cmd;
+      break;
+    }
+    case Opcode::SetErrorOutOfMemory: {
+      static std::string response{"SERVER_ERROR out of memory storing object\r\n"};
+      cmd->sock->send(response.c_str(), response.size());
+      delete cmd;
+      break;
+    }
+    case Opcode::Get: {
+      auto search = _log.find(cmd->key);
+      if (search) {
+        cmd->blob = search;
+      }
+      std::string response;
+      if (cmd->blob) {
+        const auto& value = cmd->blob.value();
+        response += "VALUE ";
+        response += cmd->key;
+        response += " 0 ";
+        response += std::to_string(value.size());
+        response += "\r\n";
+        response += value;
+        response += "\r\n";
+      }
+      response += "END\r\n";
+      cmd->sock->send(response.c_str(), response.size());
+      cmd->op = Opcode::GetOk;
+      assert(_reactor.send_msg(cmd->thread_id, cmd)); // FIXME
+      break;
+    }
+    case Opcode::GetOk: {
+      delete cmd;
+      break;
+    }
+  }
 }
 
 void
@@ -195,36 +270,70 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
         break;
       }
       nr_consumed += data_block_size;
+      const auto& key = parser.key();
+      auto target_id = find_target(key);
       std::string_view blob{parser._blob_start, parser._blob_size};
-      if (this->_log.append(parser.key(), blob)) {
-        static std::string response{"STORED\r\n"};
-        sock->send(response.c_str(), response.size());
+      if (target_id == _reactor.thread_id()) {
+        if (this->_log.append(key, blob)) {
+          static std::string response{"STORED\r\n"};
+          sock->send(response.c_str(), response.size());
+        } else {
+          static std::string response{"SERVER_ERROR out of memory storing object\r\n"};
+          sock->send(response.c_str(), response.size());
+        }
       } else {
-        static std::string response{"SERVER_ERROR out of memory storing object\r\n"};
-        sock->send(response.c_str(), response.size());
+        Command* cmd = new Command();
+        cmd->op = Opcode::Set;
+        cmd->key = key;
+        cmd->blob = blob;
+        cmd->thread_id = _reactor.thread_id();
+        cmd->sock = sock;
+        assert(_reactor.send_msg(target_id, cmd)); // FIXME
       }
       break;
     }
     case Parser::State::CmdGet: {
       const auto& key = parser.key();
-      auto search = this->_log.find(key);
-      std::string response;
-      if (search) {
-        const auto& value = search.value();
-        response += "VALUE ";
-        response += key;
-        response += " 0 ";
-        response += std::to_string(value.size());
-        response += "\r\n";
-        response += value;
-        response += "\r\n";
+      auto target_id = find_target(key);
+      if (target_id == _reactor.thread_id()) {
+        auto search = this->_log.find(key);
+        std::string response;
+        if (search) {
+          const auto& value = search.value();
+          response += "VALUE ";
+          response += key;
+          response += " 0 ";
+          response += std::to_string(value.size());
+          response += "\r\n";
+          response += value;
+          response += "\r\n";
+        }
+        response += "END\r\n";
+        sock->send(response.c_str(), response.size());
+      } else {
+        Command* cmd = new Command();
+        cmd->op = Opcode::Get;
+        cmd->key = key;
+        cmd->thread_id = _reactor.thread_id();
+        cmd->sock = sock;
+        assert(_reactor.send_msg(target_id, cmd)); // FIXME
       }
-      response += "END\r\n";
-      sock->send(response.c_str(), response.size());
       break;
     }
   }
   return nr_consumed;
+}
+
+size_t
+Server::find_target(std::string_view key) const
+{
+  size_t nr_threads = _reactor.nr_threads();
+  if (nr_threads == 1) {
+    return _reactor.thread_id();
+  }
+  uint32_t hash = 0;
+  MurmurHash3_x86_32(key.data(), key.size(), 1, &hash);
+  return hash % nr_threads;
 }
 
 static void
@@ -250,6 +359,8 @@ print_usage()
             << ")" << std::endl;
   std::cout << "  -b, --listen-backlog number Listen backlog size (default: "
             << DEFAULT_LISTEN_BACKLOG << ")" << std::endl;
+  std::cout << "  -t, --threads number        number of threads to use (default: "
+            << DEFAULT_NR_THREADS << ")" << std::endl;
   std::cout << "      --help                  print this help text and exit" << std::endl;
   std::cout << "      --version               print Sphinx version and exit" << std::endl;
   std::cout << std::endl;
@@ -276,12 +387,13 @@ parse_cmd_line(int argc, char* argv[])
                                          {"memory-limit", required_argument, 0, 'm'},
                                          {"segment-size", required_argument, 0, 's'},
                                          {"listen-backlog", required_argument, 0, 'b'},
+                                         {"threads", required_argument, 0, 't'},
                                          {"help", no_argument, 0, 'h'},
                                          {"version", no_argument, 0, 'v'},
                                          {0, 0, 0, 0}};
   Args args;
   int opt, long_index;
-  while ((opt = ::getopt_long(argc, argv, "U:l:m:s:b:", long_options, &long_index)) != -1) {
+  while ((opt = ::getopt_long(argc, argv, "U:l:m:s:b:t:", long_options, &long_index)) != -1) {
     switch (opt) {
       case 'p':
         args.tcp_port = std::stoi(optarg);
@@ -297,6 +409,9 @@ parse_cmd_line(int argc, char* argv[])
         break;
       case 'b':
         args.listen_backlog = std::stoi(optarg);
+        break;
+      case 't':
+        args.nr_threads = std::stoi(optarg);
         break;
       case 'h':
         print_usage();
@@ -315,20 +430,39 @@ parse_cmd_line(int argc, char* argv[])
   return args;
 }
 
+void
+server_thread(size_t thread_id, const Args& args)
+{
+  size_t mem_size = args.memory_limit * 1024 * 1024;
+  sphinx::memory::Memory memory = sphinx::memory::Memory::mmap(mem_size / args.nr_threads);
+  sphinx::logmem::LogConfig log_cfg;
+  log_cfg.segment_size = args.segment_size * 1024 * 1024;
+  log_cfg.memory_ptr = reinterpret_cast<char*>(memory.addr());
+  log_cfg.memory_size = memory.size();
+  Server server{log_cfg, thread_id, size_t(args.nr_threads)};
+  server.serve(args);
+}
+
 int
 main(int argc, char* argv[])
 {
   try {
     program = ::basename(argv[0]);
     auto args = parse_cmd_line(argc, argv);
-    size_t mem_size = args.memory_limit * 1024 * 1024;
-    sphinx::memory::Memory memory = sphinx::memory::Memory::mmap(mem_size);
-    sphinx::logmem::LogConfig log_cfg;
-    log_cfg.segment_size = args.segment_size * 1024 * 1024;
-    log_cfg.memory_ptr = reinterpret_cast<char*>(memory.addr());
-    log_cfg.memory_size = memory.size();
-    Server server{log_cfg, 0, 1};
-    server.serve(args);
+    std::vector<std::thread> threads;
+    for (int i = 0; i < args.nr_threads; i++) {
+      auto thread = std::thread{server_thread, i, args};
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(i, &cpuset);
+      if (pthread_setaffinity_np(thread.native_handle(), sizeof(cpu_set_t), &cpuset) < 0) {
+        throw std::system_error(errno, std::system_category(), "pthread_setaffinity_np");
+      }
+      threads.push_back(std::move(thread));
+    }
+    for (auto& t : threads) {
+      t.join();
+    }
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << std::endl;
     std::exit(EXIT_FAILURE);
