@@ -11,11 +11,11 @@ Requirements
 
 To build Sphinx, you need:
 
-* CMake
-* GCC or Clang version that supports C++17
-* Ragel
-* GoogleTest
-* Google Benchmark library
+* C++17 compatible compiler, such as [GCC 7](https://gcc.gnu.org/) or [Clang 5](https://clang.llvm.org/)
+* [CMake](https://cmake.org/)
+* [Ragel](http://www.colm.net/open-source/ragel/)
+* [Google Test](https://github.com/google/googletest)
+* [Google Benchmark library](https://github.com/google/benchmark)
 
 Build
 -----
