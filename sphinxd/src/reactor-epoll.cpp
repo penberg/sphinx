@@ -179,7 +179,7 @@ Reactor::recv(std::shared_ptr<TcpSocket>&& socket)
 
 pthread_t Reactor::_pthread_ids[max_nr_threads];
 std::atomic<bool> Reactor::_thread_is_sleeping[max_nr_threads];
-sphinx::spsc::Queue<void*, 256> Reactor::_msg_queues[max_nr_threads][max_nr_threads];
+sphinx::spsc::Queue<void*, Reactor::_msg_queue_size> Reactor::_msg_queues[max_nr_threads][max_nr_threads];
 
 void
 handler(int sig, siginfo_t* siginfo, void* data)
