@@ -50,7 +50,7 @@ TEST(LogTest, append)
   ASSERT_EQ(blob_opt.value(), blob);
 }
 
-TEST(LogTest, append_full)
+TEST(LogTest, append_expires)
 {
   using namespace sphinx::logmem;
   std::array<char, 1024> memory;
@@ -61,35 +61,9 @@ TEST(LogTest, append_full)
   Log log{cfg};
   std::string key;
   std::string blob;
-  for (;;) {
+  for (int i = 0; i < 10; i++) {
     key = make_random(8);
     blob = make_random(16);
-    if (!log.append(key, blob)) {
-      break;
-    }
+    ASSERT_TRUE(log.append(key, blob));
   }
-  key = make_random(8);
-  blob = make_random(16);
-  ASSERT_FALSE(log.append(key, blob));
-}
-
-TEST(LogTest, compact)
-{
-  using namespace sphinx::logmem;
-  std::array<char, 64> memory;
-  LogConfig cfg;
-  cfg.segment_size = 64;
-  cfg.memory_ptr = memory.data();
-  cfg.memory_size = memory.size();
-  Log log{cfg};
-  auto key = make_random(8);
-  auto blob = make_random(16);
-  ASSERT_TRUE(log.append(key, blob));
-  ASSERT_FALSE(log.append(key, blob));
-  ASSERT_TRUE(log.remove(key));
-  ASSERT_EQ(log.compact(), Object::size_of(key, blob));
-  ASSERT_TRUE(log.append(key, blob));
-  auto blob_opt = log.find(key);
-  ASSERT_TRUE(blob_opt.has_value());
-  ASSERT_EQ(blob_opt.value(), blob);
 }

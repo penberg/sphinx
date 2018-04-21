@@ -104,6 +104,12 @@ Segment::is_full() const
 }
 
 size_t
+Segment::size() const
+{
+  return _end - start();
+}
+
+size_t
 Segment::occupancy() const
 {
   return _pos - start();
@@ -168,14 +174,13 @@ Segment::start() const
 Log::Log(const LogConfig& config)
   : _config{config}
 {
-  _segments.resize(segment_index(_config.segment_size) + 1);
   auto seg_size = _config.segment_size;
   auto mem_ptr = _config.memory_ptr;
   auto mem_size = _config.memory_size;
   for (size_t seg_off = 0; seg_off < mem_size; seg_off += seg_size) {
     char* seg_ptr = mem_ptr + seg_off;
     Segment* seg = new (seg_ptr) Segment(seg_size);
-    put_segment(seg);
+    _segment_ring.emplace_back(seg);
   }
 }
 
@@ -197,34 +202,31 @@ Log::append(const Key& key, const Blob& blob)
     return false;
   }
 restart:
-  if (append_nocompact(key, blob)) {
+  if (try_to_append(key, blob)) {
     return true;
   }
-  if (compact(object_size) >= object_size) {
+  if (expire(object_size) >= object_size) {
     goto restart;
   }
   return false;
 }
 
 bool
-Log::append_nocompact(const Key& key, const Blob& blob)
+Log::try_to_append(const Key& key, const Blob& blob)
 {
-  if (_current_segment) {
-    if (try_to_append(_current_segment, key, blob)) {
-      return true;
-    }
-    put_segment(_current_segment);
-    _current_segment = nullptr;
+  if (try_to_append(_segment_ring[_segment_ring_tail], key, blob)) {
+    return true;
   }
-  Segment* seg = get_segment();
-  if (seg) {
-    if (try_to_append(seg, key, blob)) {
-      _current_segment = seg;
-      return true;
-    }
-    put_segment(seg);
+  auto next_tail = _segment_ring_tail + 1;
+  if (next_tail == _segment_ring.size()) {
+    next_tail = 0;
   }
-  return false;
+  if (next_tail == _segment_ring_head) {
+    /* Out of clean segments */
+    return false;
+  }
+  _segment_ring_tail = next_tail;
+  return try_to_append(_segment_ring[_segment_ring_tail], key, blob);
 }
 
 bool
@@ -254,86 +256,39 @@ Log::remove(const Key& key)
 }
 
 size_t
-Log::compact(size_t reclaim_target)
+Log::expire(size_t reclaim_target)
 {
   size_t nr_reclaimed = 0;
-  std::list<Segment*> compacted;
-  for (size_t i = 0; i < _segments.size(); i++) {
-    size_t idx = _segments.size() - i - 1;
-    for (auto it = _segments[idx].begin(); it != _segments[idx].end();) {
-      Segment* seg = *it;
-      it = _segments[idx].erase(it);
-      nr_reclaimed += compact(seg);
-      compacted.emplace_back(seg);
-      if (nr_reclaimed >= reclaim_target) {
-        break;
-      }
+  for (;;) {
+    if (_segment_ring_head == _segment_ring_tail) {
+      /* No more segments to expire */
+      break;
     }
-  }
-  while (!compacted.empty()) {
-    Segment* seg = compacted.front();
-    compacted.pop_front();
-    put_segment(seg);
+    nr_reclaimed += expire(_segment_ring[_segment_ring_head]);
+    _segment_ring_head++;
+    if (_segment_ring_head == _segment_ring.size()) {
+      _segment_ring_head = 0;
+    }
+    if (nr_reclaimed >= reclaim_target) {
+      break;
+    }
   }
   return nr_reclaimed;
 }
 
 size_t
-Log::compact(Segment* seg)
+Log::expire(Segment* seg)
 {
-  size_t to_reclaim = 0;
   Object* obj = seg->first_object();
   while (obj) {
-    if (obj->is_expired()) {
-      to_reclaim += obj->size();
-    } else {
-      auto it = _index.find(obj->key());
-      if (it == _index.end()) {
-        to_reclaim += obj->size();
-      }
-    }
-    obj = seg->next_object(obj);
-  }
-  if (!to_reclaim) {
-    return 0;
-  }
-  obj = seg->first_object();
-  while (obj) {
     if (!obj->is_expired()) {
-      auto it = _index.find(obj->key());
-      if (it != _index.end()) {
-        if (!append_nocompact(obj->key(), obj->blob())) {
-          return 0;
-        }
-      }
+      _index.erase(obj->key());
     }
     obj = seg->next_object(obj);
   }
-  size_t nr_reclaimed = seg->occupancy();
+  size_t nr_reclaimed = seg->size();
   seg->reset();
   return nr_reclaimed;
-}
-
-Segment*
-Log::get_segment()
-{
-  for (size_t i = 0; i < _segments.size(); i++) {
-    size_t idx = _segments.size() - i - 1;
-    auto it = _segments[idx].begin();
-    if (it != _segments[idx].end()) {
-      Segment* seg = *it;
-      _segments[idx].erase(it);
-      return seg;
-    }
-  }
-  return nullptr;
-}
-
-void
-Log::put_segment(Segment* seg)
-{
-  size_t idx = segment_index(seg->remaining());
-  _segments[idx].emplace_back(seg);
 }
 
 template<typename T>

@@ -105,6 +105,8 @@ public:
   bool is_empty() const;
   /// \brief Return true if segment is full of objects; otherwise return false;
   bool is_full() const;
+  /// \brief Returns the number of bytes allocated for objects in this segment.
+  size_t size() const;
   /// \brief Returns the number of bytes occupying the segment.
   size_t occupancy() const;
   /// \brief Returns the number of bytes available in the segment.
@@ -134,8 +136,9 @@ struct LogConfig
 class Log
 {
   std::unordered_map<Key, Object*> _index;
-  std::vector<std::list<Segment*>> _segments;
-  Segment* _current_segment = nullptr;
+  std::vector<Segment*> _segment_ring;
+  size_t _segment_ring_head = 0;
+  size_t _segment_ring_tail = 0;
   LogConfig _config;
 
 public:
@@ -147,15 +150,12 @@ public:
   bool append(const Key& key, const Blob& blob);
   /// \brief Remove the given \ref key from the log.
   bool remove(const Key& key);
-  /// \brief Compact the log.
-  size_t compact(size_t reclaim_target = std::numeric_limits<size_t>::max());
 
 private:
-  bool append_nocompact(const Key& key, const Blob& blob);
+  bool try_to_append(const Key& key, const Blob& blob);
   bool try_to_append(Segment* segment, const Key& key, const Blob& blob);
-  size_t compact(Segment* seg);
-  Segment* get_segment();
-  void put_segment(Segment* seg);
+  size_t expire(size_t reclaim_target);
+  size_t expire(Segment* segment);
   size_t segment_index(size_t size);
 };
 

@@ -36,31 +36,12 @@ make_random(size_t len)
 }
 
 static void
-Log_compact(benchmark::State& state)
+Log_append_expiring(benchmark::State& state)
 {
   using namespace sphinx::memory;
   using namespace sphinx::logmem;
-  size_t mem_size = 512 * 1024 * 1024;
-  size_t segment_size = 2 * 1024 * 1024;
-  Memory memory = Memory::mmap(mem_size);
-  LogConfig cfg;
-  cfg.segment_size = segment_size;
-  cfg.memory_ptr = reinterpret_cast<char*>(memory.addr());
-  cfg.memory_size = memory.size();
-  Log log{cfg};
-  for (auto _ : state) {
-    log.compact();
-  }
-}
-BENCHMARK(Log_compact);
-
-static void
-Log_append(benchmark::State& state)
-{
-  using namespace sphinx::memory;
-  using namespace sphinx::logmem;
-  size_t mem_size = 512 * 1024 * 1024;
-  size_t segment_size = 2 * 1024 * 1024;
+  size_t mem_size = 2 * 1024 * 1024;
+  size_t segment_size = 1 * 1024 * 1024;
   Memory memory = Memory::mmap(mem_size);
   LogConfig cfg;
   cfg.segment_size = segment_size;
@@ -73,4 +54,4 @@ Log_append(benchmark::State& state)
     log.append(key, blob);
   }
 }
-BENCHMARK(Log_append)->RangeMultiplier(2)->Range(8, 8 << 10);
+BENCHMARK(Log_append_expiring)->RangeMultiplier(2)->Range(8, 8 << 10);
