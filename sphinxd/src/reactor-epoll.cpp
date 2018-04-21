@@ -238,7 +238,7 @@ Reactor::send_msg(size_t remote_id, void* msg)
     return false;
   }
   if (_thread_is_sleeping[remote_id].load(std::memory_order_seq_cst)) {
-    _thread_is_sleeping[remote_id].store(true, std::memory_order_seq_cst);
+    _thread_is_sleeping[remote_id].store(false, std::memory_order_seq_cst);
     wake_up(remote_id);
   }
   return true;
