@@ -32,6 +32,7 @@ add_executable(sphinxd_tests
     ${RAGEL_protocol_OUTPUTS}
 )
 target_link_libraries(sphinxd_tests gtest pthread)
+add_test(sphinxd_tests sphinxd_tests)
 
 add_executable(sphinxd_perf
     perf/logmem_perf.cpp
