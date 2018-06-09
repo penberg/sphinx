@@ -236,7 +236,7 @@ Log::try_to_append(Segment* segment, const Key& key, const Blob& blob)
   if (!object) {
     return false;
   }
-  auto[it, inserted] = _index.insert_or_assign(object->key(), object);
+  auto [it, inserted] = _index.insert_or_assign(object->key(), object);
   if (!inserted) {
     it->second->expire();
   }
