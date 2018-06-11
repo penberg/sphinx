@@ -433,14 +433,19 @@ parse_cmd_line(int argc, char* argv[])
 void
 server_thread(size_t thread_id, const Args& args)
 {
-  size_t mem_size = args.memory_limit * 1024 * 1024;
-  sphinx::memory::Memory memory = sphinx::memory::Memory::mmap(mem_size / args.nr_threads);
-  sphinx::logmem::LogConfig log_cfg;
-  log_cfg.segment_size = args.segment_size * 1024 * 1024;
-  log_cfg.memory_ptr = reinterpret_cast<char*>(memory.addr());
-  log_cfg.memory_size = memory.size();
-  Server server{log_cfg, thread_id, size_t(args.nr_threads)};
-  server.serve(args);
+  try {
+    size_t mem_size = args.memory_limit * 1024 * 1024;
+    sphinx::memory::Memory memory = sphinx::memory::Memory::mmap(mem_size / args.nr_threads);
+    sphinx::logmem::LogConfig log_cfg;
+    log_cfg.segment_size = args.segment_size * 1024 * 1024;
+    log_cfg.memory_ptr = reinterpret_cast<char*>(memory.addr());
+    log_cfg.memory_size = memory.size();
+    Server server{log_cfg, thread_id, size_t(args.nr_threads)};
+    server.serve(args);
+  } catch (const std::exception& e) {
+    std::cerr << "error: " << e.what() << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
 }
 
 int
