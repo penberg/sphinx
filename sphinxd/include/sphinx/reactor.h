@@ -127,6 +127,7 @@ constexpr int max_nr_threads = 64;
 
 class Reactor
 {
+protected:
   static pthread_t _pthread_ids[max_nr_threads];
   static std::atomic<bool> _thread_is_sleeping[max_nr_threads];
   static constexpr int _msg_queue_size = 1024;
@@ -134,23 +135,20 @@ class Reactor
 
   size_t _thread_id;
   size_t _nr_threads;
-  int _epollfd;
-  std::vector<std::unique_ptr<TcpListener>> _tcp_listeners;
-  std::set<std::shared_ptr<Socket>> _sockets;
   OnMessageFn _on_message_fn;
 
 public:
   Reactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn);
-  ~Reactor();
+  virtual ~Reactor();
   size_t thread_id() const;
   size_t nr_threads() const;
   bool send_msg(size_t thread, void* data);
-  void accept(std::unique_ptr<TcpListener>&& listener);
-  void recv(std::shared_ptr<Socket>&& socket);
-  void close(std::shared_ptr<Socket> socket);
-  void run();
+  virtual void accept(std::unique_ptr<TcpListener>&& listener) = 0;
+  virtual void recv(std::shared_ptr<Socket>&& socket) = 0;
+  virtual void close(std::shared_ptr<Socket> socket) = 0;
+  virtual void run() = 0;
 
-private:
+protected:
   void wake_up(size_t thread_id);
   bool has_messages() const;
   bool poll_messages();
