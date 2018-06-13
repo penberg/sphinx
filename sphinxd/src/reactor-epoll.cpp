@@ -39,6 +39,12 @@ EpollReactor::~EpollReactor()
 void
 EpollReactor::accept(std::unique_ptr<TcpListener>&& listener)
 {
+  epoll_event ev = {};
+  ev.data.ptr = reinterpret_cast<void*>(listener.get());
+  ev.events = EPOLLIN;
+  if (epoll_ctl(_epollfd, EPOLL_CTL_ADD, listener->sockfd(), &ev) < 0) {
+    throw std::system_error(errno, std::system_category(), "epoll_ctl");
+  }
   _tcp_listeners.emplace_back(std::move(listener));
 }
 
@@ -72,14 +78,6 @@ void
 EpollReactor::run()
 {
   std::array<epoll_event, 128> events;
-  for (auto& listener : _tcp_listeners) {
-    epoll_event ev = {};
-    ev.data.ptr = reinterpret_cast<void*>(listener.get());
-    ev.events = EPOLLIN;
-    if (::epoll_ctl(_epollfd, EPOLL_CTL_ADD, listener->sockfd(), &ev) < 0) {
-      throw std::system_error(errno, std::system_category(), "epoll_ctl");
-    }
-  }
   for (;;) {
     int nr_events = 0;
     if (poll_messages()) {
