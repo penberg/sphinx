@@ -22,6 +22,7 @@ limitations under the License.
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include <sys/socket.h>
 
