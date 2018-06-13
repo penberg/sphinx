@@ -65,20 +65,27 @@ TcpListener::sockfd() const
   return _sockfd;
 }
 
-std::unique_ptr<TcpListener>
-make_tcp_listener(const std::string& iface, int port, int backlog, TcpAcceptFn&& accept_fn)
+static addrinfo*
+lookup_addresses(const std::string& iface, int port, int sock_type)
 {
   addrinfo hints;
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
-  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_socktype = sock_type;
   hints.ai_protocol = 0;
   hints.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
-  addrinfo* addresses = nullptr;
-  int err = getaddrinfo(iface.c_str(), std::to_string(port).c_str(), &hints, &addresses);
+  addrinfo* ret = nullptr;
+  int err = getaddrinfo(iface.c_str(), std::to_string(port).c_str(), &hints, &ret);
   if (err != 0) {
     throw std::runtime_error("'" + iface + "': " + gai_strerror(err));
   }
+  return ret;
+}
+
+std::unique_ptr<TcpListener>
+make_tcp_listener(const std::string& iface, int port, int backlog, TcpAcceptFn&& accept_fn)
+{
+  auto* addresses = lookup_addresses(iface, port, SOCK_STREAM);
   for (addrinfo* rp = addresses; rp != NULL; rp = rp->ai_next) {
     int sockfd = ::socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
     if (sockfd < 0) {
