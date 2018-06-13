@@ -155,4 +155,7 @@ private:
   bool has_messages() const;
   bool poll_messages();
 };
+
+std::unique_ptr<Reactor>
+make_reactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn);
 }

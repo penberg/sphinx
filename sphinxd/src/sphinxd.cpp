@@ -149,7 +149,7 @@ struct Connection
 
 class Server
 {
-  sphinx::reactor::Reactor _reactor;
+  std::unique_ptr<sphinx::reactor::Reactor> _reactor;
   sphinx::logmem::Log _log;
 
 public:
@@ -170,7 +170,9 @@ private:
 };
 
 Server::Server(const sphinx::logmem::LogConfig& log_cfg, size_t thread_id, size_t nr_threads)
-  : _reactor{thread_id, nr_threads, [this](void* data) { this->on_message(data); }}
+  : _reactor{sphinx::reactor::make_reactor(thread_id,
+                                           nr_threads,
+                                           [this](void* data) { this->on_message(data); })}
   , _log{log_cfg}
 {
 }
@@ -186,14 +188,14 @@ Server::serve(const Args& args)
     };
     auto sock =
       sphinx::reactor::make_udp_socket(args.listen_addr, args.udp_port, std::move(recv_fn));
-    _reactor.recv(std::move(sock));
+    _reactor->recv(std::move(sock));
   } else {
     auto accept_fn = [this](int sockfd) { this->accept(sockfd); };
     auto listener = sphinx::reactor::make_tcp_listener(
       args.listen_addr, args.tcp_port, args.listen_backlog, std::move(accept_fn));
-    _reactor.accept(std::move(listener));
+    _reactor->accept(std::move(listener));
   }
-  _reactor.run();
+  _reactor->run();
 }
 
 void
@@ -207,7 +209,7 @@ Server::on_message(void* data)
       } else {
         cmd->op = Opcode::SetErrorOutOfMemory;
       }
-      assert(_reactor.send_msg(cmd->thread_id, cmd));
+      assert(_reactor->send_msg(cmd->thread_id, cmd));
       break;
     }
     case Opcode::SetOk: {
@@ -246,7 +248,7 @@ Server::on_message(void* data)
       response += "END\r\n";
       req.sock->send(response.c_str(), response.size(), req.dst);
       cmd->op = Opcode::GetOk;
-      assert(_reactor.send_msg(cmd->thread_id, cmd)); // FIXME
+      assert(_reactor->send_msg(cmd->thread_id, cmd)); // FIXME
       break;
     }
     case Opcode::GetOk: {
@@ -265,7 +267,7 @@ Server::accept(int sockfd)
                                    std::string_view msg) mutable { this->recv(conn, sock, msg); };
   auto sock = std::make_shared<sphinx::reactor::TcpSocket>(sockfd, std::move(recv_fn));
   sock->set_tcp_nodelay(true);
-  this->_reactor.recv(std::move(sock));
+  this->_reactor->recv(std::move(sock));
 }
 
 void
@@ -274,7 +276,7 @@ Server::recv(Connection& conn,
              std::string_view msg)
 {
   if (msg.size() == 0) {
-    _reactor.close(sock);
+    _reactor->close(sock);
     return;
   }
   if (conn._rx_buffer.is_empty()) {
@@ -361,7 +363,7 @@ Server::process_one(const Request& req)
       const auto& key = parser.key();
       auto target_id = find_target(key);
       std::string_view blob{parser._blob_start, parser._blob_size};
-      if (target_id == _reactor.thread_id()) {
+      if (target_id == _reactor->thread_id()) {
         if (this->_log.append(key, blob)) {
           response += "STORED\r\n";
           req.sock->send(response.c_str(), response.size(), req.dst);
@@ -374,16 +376,16 @@ Server::process_one(const Request& req)
         cmd->op = Opcode::Set;
         cmd->key = key;
         cmd->blob = blob;
-        cmd->thread_id = _reactor.thread_id();
+        cmd->thread_id = _reactor->thread_id();
         cmd->req = req;
-        assert(_reactor.send_msg(target_id, cmd)); // FIXME
+        assert(_reactor->send_msg(target_id, cmd)); // FIXME
       }
       break;
     }
     case Parser::State::CmdGet: {
       const auto& key = parser.key();
       auto target_id = find_target(key);
-      if (target_id == _reactor.thread_id()) {
+      if (target_id == _reactor->thread_id()) {
         auto search = this->_log.find(key);
         if (search) {
           const auto& value = search.value();
@@ -401,9 +403,9 @@ Server::process_one(const Request& req)
         Command* cmd = new Command();
         cmd->op = Opcode::Get;
         cmd->key = key;
-        cmd->thread_id = _reactor.thread_id();
+        cmd->thread_id = _reactor->thread_id();
         cmd->req = req;
-        assert(_reactor.send_msg(target_id, cmd)); // FIXME
+        assert(_reactor->send_msg(target_id, cmd)); // FIXME
       }
       break;
     }
@@ -414,9 +416,9 @@ Server::process_one(const Request& req)
 size_t
 Server::find_target(std::string_view key) const
 {
-  size_t nr_threads = _reactor.nr_threads();
+  size_t nr_threads = _reactor->nr_threads();
   if (nr_threads == 1) {
-    return _reactor.thread_id();
+    return _reactor->thread_id();
   }
   uint32_t hash = 0;
   MurmurHash3_x86_32(key.data(), key.size(), 1, &hash);

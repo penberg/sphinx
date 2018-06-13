@@ -17,6 +17,7 @@ add_executable(sphinxd
     src/MurmurHash3.cpp
     src/logmem.cpp
     src/memory.cpp
+    src/reactor.cpp
     src/sphinxd.cpp
     ${SYSTEM_SOURCES}
     ${RAGEL_protocol_OUTPUTS}
