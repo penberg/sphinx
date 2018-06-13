@@ -32,6 +32,28 @@ limitations under the License.
 
 namespace sphinx::reactor {
 
+SockAddr::SockAddr(::sockaddr_storage addr, ::socklen_t len)
+  : addr{addr}
+  , len{len}
+{
+}
+
+Socket::Socket(int sockfd)
+  : _sockfd{sockfd}
+{
+}
+
+Socket::~Socket()
+{
+  ::close(_sockfd);
+}
+
+int
+Socket::sockfd() const
+{
+  return _sockfd;
+}
+
 TcpListener::TcpListener(int sockfd, TcpAcceptFn&& accept_fn)
   : _sockfd{sockfd}
   , _accept_fn{accept_fn}
@@ -109,14 +131,13 @@ make_tcp_listener(const std::string& iface, int port, int backlog, TcpAcceptFn&&
 }
 
 TcpSocket::TcpSocket(int sockfd, TcpRecvFn&& recv_fn)
-  : _sockfd{sockfd}
+  : Socket{sockfd}
   , _recv_fn{recv_fn}
 {
 }
 
 TcpSocket::~TcpSocket()
 {
-  ::close(_sockfd);
 }
 
 void
@@ -129,7 +150,7 @@ TcpSocket::set_tcp_nodelay(bool nodelay)
 }
 
 void
-TcpSocket::send(const char* msg, size_t len)
+TcpSocket::send(const char* msg, size_t len, [[gnu::unused]] std::optional<SockAddr> dst)
 {
   ssize_t nr = ::send(_sockfd, msg, len, MSG_NOSIGNAL | MSG_DONTWAIT);
   if ((nr < 0) && (errno == ECONNRESET || errno == EPIPE)) {
@@ -141,12 +162,6 @@ TcpSocket::send(const char* msg, size_t len)
   if (size_t(nr) != len) {
     throw std::runtime_error("partial send");
   }
-}
-
-int
-TcpSocket::sockfd() const
-{
-  return _sockfd;
 }
 
 void
@@ -173,7 +188,7 @@ Reactor::accept(std::unique_ptr<TcpListener>&& listener)
 }
 
 void
-Reactor::recv(std::shared_ptr<TcpSocket>&& socket)
+Reactor::recv(std::shared_ptr<Socket>&& socket)
 {
   epoll_event ev = {};
   ev.data.ptr = reinterpret_cast<void*>(socket.get());
@@ -181,7 +196,85 @@ Reactor::recv(std::shared_ptr<TcpSocket>&& socket)
   if (epoll_ctl(_epollfd, EPOLL_CTL_ADD, socket->sockfd(), &ev) < 0) {
     throw std::system_error(errno, std::system_category(), "epoll_ctl");
   }
-  _tcp_sockets.emplace(std::move(socket));
+  _sockets.emplace(std::move(socket));
+}
+
+UdpSocket::UdpSocket(int sockfd, UdpRecvFn&& recv_fn)
+  : Socket{sockfd}
+  , _recv_fn{recv_fn}
+{
+}
+
+UdpSocket::~UdpSocket()
+{
+}
+
+void
+UdpSocket::send(const char* msg, size_t len, std::optional<SockAddr> dst)
+{
+  ssize_t nr = ::sendto(_sockfd,
+                        msg,
+                        len,
+                        MSG_NOSIGNAL | MSG_DONTWAIT,
+                        reinterpret_cast<::sockaddr*>(&dst->addr),
+                        dst->len);
+  if ((nr < 0) && (errno == ECONNRESET || errno == EPIPE)) {
+    return;
+  }
+  if (nr < 0) {
+    throw std::system_error(errno, std::system_category(), "send");
+  }
+  if (size_t(nr) != len) {
+    throw std::runtime_error("partial send");
+  }
+}
+
+void
+UdpSocket::on_read_event()
+{
+  constexpr size_t rx_buf_size = 256 * 1024;
+  std::array<char, rx_buf_size> rx_buf;
+  ::sockaddr_storage src_addr;
+  ::socklen_t src_addr_len = sizeof(src_addr);
+  ssize_t nr = ::recvfrom(_sockfd,
+                          rx_buf.data(),
+                          rx_buf.size(),
+                          MSG_DONTWAIT,
+                          reinterpret_cast<::sockaddr*>(&src_addr),
+                          &src_addr_len);
+  if ((nr < 0 && errno == ECONNRESET)) {
+    _recv_fn(this->shared_from_this(), std::string_view{}, std::nullopt);
+    return;
+  }
+  if (nr < 0) {
+    throw std::system_error(errno, std::system_category(), "recvfrom");
+  }
+  SockAddr src{src_addr, src_addr_len};
+  _recv_fn(this->shared_from_this(),
+           std::string_view{rx_buf.data(), std::string_view::size_type(nr)},
+           src);
+}
+
+std::shared_ptr<UdpSocket>
+make_udp_socket(const std::string& iface, int port, UdpRecvFn&& recv_fn)
+{
+  auto* addresses = lookup_addresses(iface, port, SOCK_DGRAM);
+  for (addrinfo* rp = addresses; rp != NULL; rp = rp->ai_next) {
+    int sockfd = ::socket(rp->ai_family, rp->ai_socktype | SOCK_NONBLOCK, rp->ai_protocol);
+    if (sockfd < 0) {
+      continue;
+    }
+    int one = 1;
+    ::setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &one, sizeof(one));
+    if (::bind(sockfd, rp->ai_addr, rp->ai_addrlen) < 0) {
+      ::close(sockfd);
+      continue;
+    }
+    freeaddrinfo(addresses);
+    return std::make_shared<UdpSocket>(sockfd, std::move(recv_fn));
+  }
+  freeaddrinfo(addresses);
+  throw std::runtime_error("Failed to listen to interface: '" + iface + "'");
 }
 
 pthread_t Reactor::_pthread_ids[max_nr_threads];
@@ -252,7 +345,7 @@ Reactor::send_msg(size_t remote_id, void* msg)
 }
 
 void
-Reactor::close(std::shared_ptr<TcpSocket> socket)
+Reactor::close(std::shared_ptr<Socket> socket)
 {
   if (::epoll_ctl(_epollfd, EPOLL_CTL_DEL, socket->sockfd(), nullptr) < 0) {
     throw std::system_error(errno, std::system_category(), "epoll_ctl");
@@ -262,7 +355,7 @@ Reactor::close(std::shared_ptr<TcpSocket> socket)
       throw std::system_error(errno, std::system_category(), "close");
     }
   }
-  _tcp_sockets.erase(socket);
+  _sockets.erase(socket);
 }
 
 void

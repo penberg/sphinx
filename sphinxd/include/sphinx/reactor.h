@@ -23,7 +23,20 @@ limitations under the License.
 #include <set>
 #include <string>
 
+#include <sys/socket.h>
+
 namespace sphinx::reactor {
+
+struct SockAddr
+{
+  ::sockaddr_storage addr;
+  ::socklen_t len;
+
+  SockAddr(::sockaddr_storage addr, ::socklen_t len);
+  SockAddr(const SockAddr&) = default;
+  SockAddr(SockAddr&&) = default;
+  SockAddr& operator=(const SockAddr&) = default;
+};
 
 using TcpAcceptFn = std::function<void(int sockfd)>;
 
@@ -31,6 +44,19 @@ struct Evented
 {
   virtual ~Evented() {}
   virtual void on_read_event() = 0;
+};
+
+class Socket : public Evented
+{
+protected:
+  int _sockfd;
+
+public:
+  explicit Socket(int sockfd);
+  virtual ~Socket();
+
+  int sockfd() const;
+  virtual void send(const char* msg, size_t len, std::optional<SockAddr> dst = std::nullopt) = 0;
 };
 
 class TcpListener : public Evented
@@ -58,23 +84,42 @@ class TcpSocket;
 using TcpRecvFn = std::function<void(std::shared_ptr<TcpSocket>, std::string_view)>;
 
 class TcpSocket
-  : public Evented
+  : public Socket
   , public std::enable_shared_from_this<TcpSocket>
 {
-  int _sockfd;
   TcpRecvFn _recv_fn;
 
 public:
   explicit TcpSocket(int sockfd, TcpRecvFn&& recv_fn);
   ~TcpSocket();
   void set_tcp_nodelay(bool nodelay);
-  void send(const char* msg, size_t len);
-  int sockfd() const;
+  void send(const char* msg, size_t len, std::optional<SockAddr> dst = std::nullopt) override;
   void on_read_event() override;
 
 private:
   void recv();
 };
+
+class UdpSocket;
+
+using UdpRecvFn =
+  std::function<void(std::shared_ptr<UdpSocket>, std::string_view, std::optional<SockAddr>)>;
+
+class UdpSocket
+  : public Socket
+  , public std::enable_shared_from_this<UdpSocket>
+{
+  UdpRecvFn _recv_fn;
+
+public:
+  explicit UdpSocket(int sockfd, UdpRecvFn&& recv_fn);
+  ~UdpSocket();
+  void send(const char* msg, size_t len, std::optional<SockAddr> dst) override;
+  void on_read_event() override;
+};
+
+std::shared_ptr<UdpSocket>
+make_udp_socket(const std::string& iface, int port, UdpRecvFn&& recv_fn);
 
 using OnMessageFn = std::function<void(void*)>;
 
@@ -91,7 +136,7 @@ class Reactor
   size_t _nr_threads;
   int _epollfd;
   std::vector<std::unique_ptr<TcpListener>> _tcp_listeners;
-  std::set<std::shared_ptr<TcpSocket>> _tcp_sockets;
+  std::set<std::shared_ptr<Socket>> _sockets;
   OnMessageFn _on_message_fn;
 
 public:
@@ -101,8 +146,8 @@ public:
   size_t nr_threads() const;
   bool send_msg(size_t thread, void* data);
   void accept(std::unique_ptr<TcpListener>&& listener);
-  void recv(std::shared_ptr<TcpSocket>&& socket);
-  void close(std::shared_ptr<TcpSocket> socket);
+  void recv(std::shared_ptr<Socket>&& socket);
+  void close(std::shared_ptr<Socket> socket);
   void run();
 
 private:
