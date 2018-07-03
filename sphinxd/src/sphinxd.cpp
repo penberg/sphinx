@@ -51,6 +51,7 @@ struct Args
   int segment_size = DEFAULT_SEGMENT_SIZE; /* in MB */
   int listen_backlog = DEFAULT_LISTEN_BACKLOG;
   int nr_threads = DEFAULT_NR_THREADS;
+  std::string backend = sphinx::reactor::Reactor::default_backend();
 };
 
 class Buffer
@@ -153,7 +154,10 @@ class Server
   sphinx::logmem::Log _log;
 
 public:
-  Server(const sphinx::logmem::LogConfig& log_cfg, size_t thread_id, size_t nr_threads);
+  Server(const sphinx::logmem::LogConfig& log_cfg,
+         const std::string& backend,
+         size_t thread_id,
+         size_t nr_threads);
   void serve(const Args& args);
 
 private:
@@ -169,8 +173,12 @@ private:
   size_t find_target(std::string_view key) const;
 };
 
-Server::Server(const sphinx::logmem::LogConfig& log_cfg, size_t thread_id, size_t nr_threads)
-  : _reactor{sphinx::reactor::make_reactor(thread_id,
+Server::Server(const sphinx::logmem::LogConfig& log_cfg,
+               const std::string& backend,
+               size_t thread_id,
+               size_t nr_threads)
+  : _reactor{sphinx::reactor::make_reactor(backend,
+                                           thread_id,
                                            nr_threads,
                                            [this](void* data) { this->on_message(data); })}
   , _log{log_cfg}
@@ -452,6 +460,8 @@ print_usage()
             << DEFAULT_LISTEN_BACKLOG << ")" << std::endl;
   std::cout << "  -t, --threads number        number of threads to use (default: "
             << DEFAULT_NR_THREADS << ")" << std::endl;
+  std::cout << "  -I, --io-backend name       I/O backend (default: "
+            << sphinx::reactor::Reactor::default_backend() << ")" << std::endl;
   std::cout << "      --help                  print this help text and exit" << std::endl;
   std::cout << "      --version               print Sphinx version and exit" << std::endl;
   std::cout << std::endl;
@@ -480,12 +490,13 @@ parse_cmd_line(int argc, char* argv[])
                                          {"segment-size", required_argument, 0, 's'},
                                          {"listen-backlog", required_argument, 0, 'b'},
                                          {"threads", required_argument, 0, 't'},
+                                         {"io-backend", required_argument, 0, 'I'},
                                          {"help", no_argument, 0, 'h'},
                                          {"version", no_argument, 0, 'v'},
                                          {0, 0, 0, 0}};
   Args args;
   int opt, long_index;
-  while ((opt = ::getopt_long(argc, argv, "p:U:l:m:s:b:t:", long_options, &long_index)) != -1) {
+  while ((opt = ::getopt_long(argc, argv, "p:U:l:m:s:b:t:I:", long_options, &long_index)) != -1) {
     switch (opt) {
       case 'p':
         args.tcp_port = std::stoi(optarg);
@@ -507,6 +518,9 @@ parse_cmd_line(int argc, char* argv[])
         break;
       case 't':
         args.nr_threads = std::stoi(optarg);
+        break;
+      case 'I':
+        args.backend = optarg;
         break;
       case 'h':
         print_usage();
@@ -535,7 +549,7 @@ server_thread(size_t thread_id, const Args& args)
     log_cfg.segment_size = args.segment_size * 1024 * 1024;
     log_cfg.memory_ptr = reinterpret_cast<char*>(memory.addr());
     log_cfg.memory_size = memory.size();
-    Server server{log_cfg, thread_id, size_t(args.nr_threads)};
+    Server server{log_cfg, args.backend, thread_id, size_t(args.nr_threads)};
     server.serve(args);
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << std::endl;

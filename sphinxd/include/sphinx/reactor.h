@@ -138,6 +138,8 @@ protected:
   OnMessageFn _on_message_fn;
 
 public:
+  static std::string default_backend();
+
   Reactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn);
   virtual ~Reactor();
   size_t thread_id() const;
@@ -155,5 +157,8 @@ protected:
 };
 
 std::unique_ptr<Reactor>
-make_reactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn);
+make_reactor(const std::string& backend,
+             size_t thread_id,
+             size_t nr_threads,
+             OnMessageFn&& on_message_fn);
 }

@@ -269,6 +269,12 @@ handler([[gnu::unused]] int sig, [[gnu::unused]] siginfo_t* siginfo, [[gnu::unus
 {
 }
 
+std::string
+Reactor::default_backend()
+{
+  return "epoll";
+}
+
 Reactor::Reactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn)
   : _thread_id{thread_id}
   , _nr_threads{nr_threads}
@@ -373,8 +379,15 @@ Reactor::poll_messages()
 }
 
 std::unique_ptr<Reactor>
-make_reactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn)
+make_reactor(const std::string& backend,
+             size_t thread_id,
+             size_t nr_threads,
+             OnMessageFn&& on_message_fn)
 {
-  return std::make_unique<EpollReactor>(thread_id, nr_threads, std::move(on_message_fn));
+  if (backend == "epoll") {
+    return std::make_unique<EpollReactor>(thread_id, nr_threads, std::move(on_message_fn));
+  } else {
+    throw std::invalid_argument("unrecognized '" + backend + "' backend");
+  }
 }
 }
