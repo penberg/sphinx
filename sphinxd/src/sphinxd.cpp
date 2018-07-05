@@ -536,6 +536,12 @@ parse_cmd_line(int argc, char* argv[])
         std::exit(EXIT_FAILURE);
     }
   }
+  if (args.memory_limit % args.nr_threads != 0) {
+    throw std::invalid_argument("memory limit (" + std::to_string(args.memory_limit) +
+                                ") is not divisible by number of threads (" +
+                                std::to_string(args.nr_threads) +
+                                "), which is required for partitioning");
+  }
   return args;
 }
 
