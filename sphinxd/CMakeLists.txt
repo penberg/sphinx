@@ -24,16 +24,18 @@ add_executable(sphinxd
 )
 target_link_libraries(sphinxd pthread)
 
-add_executable(sphinxd_tests
-    src/logmem.cpp
-    test/logmem_test.cpp
-    test/main.cpp
-    test/protocol_test.cpp
-    test/spsc_queue_test.cpp
-    ${RAGEL_protocol_OUTPUTS}
-)
-target_link_libraries(sphinxd_tests gtest pthread)
-add_test(sphinxd_tests sphinxd_tests)
+if(GTEST_FOUND)
+  add_executable(sphinxd_tests
+      src/logmem.cpp
+      test/logmem_test.cpp
+      test/main.cpp
+      test/protocol_test.cpp
+      test/spsc_queue_test.cpp
+      ${RAGEL_protocol_OUTPUTS}
+  )
+  target_link_libraries(sphinxd_tests ${GTEST_BOTH_LIBRARIES} pthread)
+  add_test(sphinxd_tests sphinxd_tests)
+endif()
 
 add_executable(sphinxd_perf
     perf/logmem_perf.cpp
