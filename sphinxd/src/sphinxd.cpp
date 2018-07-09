@@ -572,12 +572,6 @@ main(int argc, char* argv[])
     std::vector<std::thread> threads;
     for (int i = 0; i < args.nr_threads; i++) {
       auto thread = std::thread{server_thread, i, args};
-      cpu_set_t cpuset;
-      CPU_ZERO(&cpuset);
-      CPU_SET(i, &cpuset);
-      if (pthread_setaffinity_np(thread.native_handle(), sizeof(cpu_set_t), &cpuset) < 0) {
-        throw std::system_error(errno, std::system_category(), "pthread_setaffinity_np");
-      }
       threads.push_back(std::move(thread));
     }
     for (auto& t : threads) {
