@@ -1,3 +1,5 @@
+option(BUILD_BENCHMARKS "Build Sphinx benchmarks" OFF)
+
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/sphinx)
 
 RAGEL_TARGET(protocol src/protocol.rl ${CMAKE_CURRENT_BINARY_DIR}/include/sphinx/protocol.h)
@@ -37,12 +39,14 @@ if(GTEST_FOUND)
   add_test(sphinxd_tests sphinxd_tests)
 endif()
 
-add_executable(sphinxd_perf
-    perf/logmem_perf.cpp
-    perf/main.cpp
-    perf/protocol_perf.cpp
-    src/logmem.cpp
-    src/memory.cpp
-    ${RAGEL_protocol_OUTPUTS}
-)
-target_link_libraries(sphinxd_perf benchmark pthread)
+if(BUILD_BENCHMARKS)
+  add_executable(sphinxd_perf
+      perf/logmem_perf.cpp
+      perf/main.cpp
+      perf/protocol_perf.cpp
+      src/logmem.cpp
+      src/memory.cpp
+      ${RAGEL_protocol_OUTPUTS}
+  )
+  target_link_libraries(sphinxd_perf benchmark pthread)
+endif()

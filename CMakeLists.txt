@@ -4,11 +4,10 @@ project(Sphinx LANGUAGES CXX)
 
 enable_testing()
 
-find_package(GTest)
-
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR})
 
 find_package(RAGEL 6.6 REQUIRED)
+find_package(GTest)
 
 set(SPHINX_VERSION 0.1.0)
 
