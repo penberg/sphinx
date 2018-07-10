@@ -5,7 +5,7 @@ file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/sphinx)
 RAGEL_TARGET(protocol src/protocol.rl ${CMAKE_CURRENT_BINARY_DIR}/include/sphinx/protocol.h)
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-  set(SYSTEM_SOURCES src/reactor-epoll.cpp include/sphinx/memory.h)
+  set(SYSTEM_SOURCES src/reactor-epoll.cpp)
 else()
     message(FATAL_ERROR "Unsupported system: ${CMAKE_SYSTEM_NAME}")
 endif(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
