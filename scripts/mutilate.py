@@ -104,23 +104,23 @@ def measure(args):
                 client_output = str(raw_client_output)
 
                 latency_regex = r"%s\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)" % args.scenario
-                avg = re.search(latency_regex, client_output)[1]
-                std = re.search(latency_regex, client_output)[2]
-                min_ = re.search(latency_regex, client_output)[3]
-                p5 = re.search(latency_regex, client_output)[4]
-                p10 = re.search(latency_regex, client_output)[5]
-                p90 = re.search(latency_regex, client_output)[6]
-                p95 = re.search(latency_regex, client_output)[7]
-                p99 = re.search(latency_regex, client_output)[8]
+                avg = re.search(latency_regex, client_output).group(1)
+                std = re.search(latency_regex, client_output).group(2)
+                min_ = re.search(latency_regex, client_output).group(3)
+                p5 = re.search(latency_regex, client_output).group(4)
+                p10 = re.search(latency_regex, client_output).group(5)
+                p90 = re.search(latency_regex, client_output).group(6)
+                p95 = re.search(latency_regex, client_output).group(7)
+                p99 = re.search(latency_regex, client_output).group(8)
 
                 qps_regex = r"Total QPS = (\d+.\d+)"
-                qps = re.search(qps_regex, client_output)[1]
+                qps = re.search(qps_regex, client_output).group(1)
 
                 rx_regex = r"RX\s+\d+ bytes :\s+(\d+.\d+) MB/s"
-                rx = re.search(rx_regex, client_output)[1]
+                rx = re.search(rx_regex, client_output).group(1)
 
                 tx_regex = r"TX\s+\d+ bytes :\s+(\d+.\d+) MB/s"
-                tx = re.search(tx_regex, client_output)[1]
+                tx = re.search(tx_regex, client_output).group(1)
 
                 result = "%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (
                     sample + 1, client_conn, avg, std, min_, p5, p10, p90, p95, p99, qps, rx, tx)
