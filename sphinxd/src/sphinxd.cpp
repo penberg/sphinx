@@ -22,6 +22,7 @@ limitations under the License.
 
 #include <cassert> // FIXME
 #include <iostream>
+#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -52,6 +53,7 @@ struct Args
   int listen_backlog = DEFAULT_LISTEN_BACKLOG;
   int nr_threads = DEFAULT_NR_THREADS;
   std::string backend = sphinx::reactor::Reactor::default_backend();
+  std::set<int> isolate_cpus;
 };
 
 class Buffer
@@ -462,6 +464,7 @@ print_usage()
             << DEFAULT_NR_THREADS << ")" << std::endl;
   std::cout << "  -I, --io-backend name       I/O backend (default: "
             << sphinx::reactor::Reactor::default_backend() << ")" << std::endl;
+  std::cout << "  -i, --isolate-cpus list     list of CPUs to isolate application threads" << std::endl;
   std::cout << "      --help                  print this help text and exit" << std::endl;
   std::cout << "      --version               print Sphinx version and exit" << std::endl;
   std::cout << std::endl;
@@ -480,6 +483,18 @@ print_unrecognized_opt(const std::string& option)
   print_opt_error(option, "unregonized");
 }
 
+static std::set<int>
+parse_cpu_list(const std::string& raw_cpu_list)
+{
+  std::set<int> cpu_list;
+  std::istringstream iss(raw_cpu_list);
+  std::string token;
+  while (std::getline(iss, token, ',')) {
+    cpu_list.emplace(std::stoi(token));
+  }
+  return cpu_list;
+}
+
 static Args
 parse_cmd_line(int argc, char* argv[])
 {
@@ -491,12 +506,13 @@ parse_cmd_line(int argc, char* argv[])
                                          {"listen-backlog", required_argument, 0, 'b'},
                                          {"threads", required_argument, 0, 't'},
                                          {"io-backend", required_argument, 0, 'I'},
+                                         {"isolate-cpus", required_argument, 0, 'i'},
                                          {"help", no_argument, 0, 'h'},
                                          {"version", no_argument, 0, 'v'},
                                          {0, 0, 0, 0}};
   Args args;
   int opt, long_index;
-  while ((opt = ::getopt_long(argc, argv, "p:U:l:m:s:b:t:I:", long_options, &long_index)) != -1) {
+  while ((opt = ::getopt_long(argc, argv, "p:U:l:m:s:b:t:I:i:", long_options, &long_index)) != -1) {
     switch (opt) {
       case 'p':
         args.tcp_port = std::stoi(optarg);
@@ -522,6 +538,9 @@ parse_cmd_line(int argc, char* argv[])
       case 'I':
         args.backend = optarg;
         break;
+      case 'i':
+        args.isolate_cpus = parse_cpu_list(optarg);
+        break;
       case 'h':
         print_usage();
         std::exit(EXIT_SUCCESS);
@@ -546,9 +565,17 @@ parse_cmd_line(int argc, char* argv[])
 }
 
 void
-server_thread(size_t thread_id, const Args& args)
+server_thread(size_t thread_id, std::optional<int> cpu_id, const Args& args)
 {
   try {
+    if (cpu_id) {
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(*cpu_id, &cpuset);
+      if (::pthread_setaffinity_np(::pthread_self(), sizeof(cpu_set_t), &cpuset) < 0) {
+        throw std::system_error(errno, std::system_category(), "pthread_setaffinity_np");
+      }
+    }
     size_t mem_size = args.memory_limit * 1024 * 1024;
     sphinx::memory::Memory memory = sphinx::memory::Memory::mmap(mem_size / args.nr_threads);
     sphinx::logmem::LogConfig log_cfg;
@@ -563,15 +590,38 @@ server_thread(size_t thread_id, const Args& args)
   }
 }
 
+struct CpuAffinity
+{
+  std::set<int> isolate_cpus;
+  std::optional<int> next_id;
+  CpuAffinity(const std::set<int> isolate_cpus)
+    : isolate_cpus{isolate_cpus}
+  {
+  }
+  int next_cpu_id()
+  {
+    int id = next_id.value_or(0);
+    for (;;) {
+      if (isolate_cpus.count(id) == 0) {
+        break;
+      }
+      id++;
+    }
+    next_id = id + 1;
+    return id;
+  }
+};
+
 int
 main(int argc, char* argv[])
 {
   try {
     program = ::basename(argv[0]);
     auto args = parse_cmd_line(argc, argv);
+    CpuAffinity cpu_affinity{args.isolate_cpus};
     std::vector<std::thread> threads;
     for (int i = 0; i < args.nr_threads; i++) {
-      auto thread = std::thread{server_thread, i, args};
+      auto thread = std::thread{server_thread, i, cpu_affinity.next_cpu_id(), args};
       threads.push_back(std::move(thread));
     }
     for (auto& t : threads) {
