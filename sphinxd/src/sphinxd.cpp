@@ -578,14 +578,16 @@ server_thread(size_t thread_id, std::optional<int> cpu_id, const Args& args)
       cpu_set_t cpuset;
       CPU_ZERO(&cpuset);
       CPU_SET(*cpu_id, &cpuset);
-      if (::pthread_setaffinity_np(::pthread_self(), sizeof(cpu_set_t), &cpuset) != 0) {
+      auto err = ::pthread_setaffinity_np(::pthread_self(), sizeof(cpu_set_t), &cpuset);
+      if (err != 0) {
         throw std::system_error(errno, std::system_category(), "pthread_setaffinity_np");
       }
     }
     if (args.sched_fifo) {
       ::sched_param param = {};
       param.sched_priority = 1;
-      if (::pthread_setschedparam(::pthread_self(), SCHED_FIFO, &param) != 0) {
+      auto err = ::pthread_setschedparam(::pthread_self(), SCHED_FIFO, &param);
+      if (err != 0) {
         throw std::system_error(errno, std::system_category(), "pthread_setschedparam");
       }
     }
