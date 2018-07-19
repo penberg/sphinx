@@ -54,6 +54,7 @@ struct Args
   int nr_threads = DEFAULT_NR_THREADS;
   std::string backend = sphinx::reactor::Reactor::default_backend();
   std::set<int> isolate_cpus;
+  bool sched_fifo = false;
 };
 
 class Buffer
@@ -465,6 +466,7 @@ print_usage()
   std::cout << "  -I, --io-backend name       I/O backend (default: "
             << sphinx::reactor::Reactor::default_backend() << ")" << std::endl;
   std::cout << "  -i, --isolate-cpus list     list of CPUs to isolate application threads" << std::endl;
+  std::cout << "  -S, --sched-fifo            use SCHED_FIFO scheduling policy" << std::endl;
   std::cout << "      --help                  print this help text and exit" << std::endl;
   std::cout << "      --version               print Sphinx version and exit" << std::endl;
   std::cout << std::endl;
@@ -507,12 +509,13 @@ parse_cmd_line(int argc, char* argv[])
                                          {"threads", required_argument, 0, 't'},
                                          {"io-backend", required_argument, 0, 'I'},
                                          {"isolate-cpus", required_argument, 0, 'i'},
+                                         {"sched-fifo", no_argument, 0, 'S'},
                                          {"help", no_argument, 0, 'h'},
                                          {"version", no_argument, 0, 'v'},
                                          {0, 0, 0, 0}};
   Args args;
   int opt, long_index;
-  while ((opt = ::getopt_long(argc, argv, "p:U:l:m:s:b:t:I:i:", long_options, &long_index)) != -1) {
+  while ((opt = ::getopt_long(argc, argv, "p:U:l:m:s:b:t:I:i:S", long_options, &long_index)) != -1) {
     switch (opt) {
       case 'p':
         args.tcp_port = std::stoi(optarg);
@@ -540,6 +543,9 @@ parse_cmd_line(int argc, char* argv[])
         break;
       case 'i':
         args.isolate_cpus = parse_cpu_list(optarg);
+        break;
+      case 'S':
+        args.sched_fifo = true;
         break;
       case 'h':
         print_usage();
@@ -574,6 +580,13 @@ server_thread(size_t thread_id, std::optional<int> cpu_id, const Args& args)
       CPU_SET(*cpu_id, &cpuset);
       if (::pthread_setaffinity_np(::pthread_self(), sizeof(cpu_set_t), &cpuset) < 0) {
         throw std::system_error(errno, std::system_category(), "pthread_setaffinity_np");
+      }
+    }
+    if (args.sched_fifo) {
+      ::sched_param param = {};
+      param.sched_priority = 1;
+      if (::pthread_setschedparam(::pthread_self(), SCHED_FIFO, &param) != 0) {
+        throw std::system_error(errno, std::system_category(), "pthread_setschedparam");
       }
     }
     size_t mem_size = args.memory_limit * 1024 * 1024;
