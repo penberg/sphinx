@@ -33,6 +33,7 @@ if(GTEST_FOUND)
       test/main.cpp
       test/protocol_test.cpp
       test/spsc_queue_test.cpp
+      test/string_test.cpp
       ${RAGEL_protocol_OUTPUTS}
   )
   target_link_libraries(sphinxd_tests ${GTEST_BOTH_LIBRARIES} pthread)

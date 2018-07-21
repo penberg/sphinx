@@ -19,6 +19,7 @@ limitations under the License.
 #include <sphinx/memory.h>
 #include <sphinx/protocol.h>
 #include <sphinx/reactor.h>
+#include <sphinx/string.h>
 
 #include <cassert> // FIXME
 #include <iostream>
@@ -251,7 +252,7 @@ Server::on_message(void* data)
         response += "VALUE ";
         response += cmd->key;
         response += " 0 ";
-        response += std::to_string(value.size());
+        response += sphinx::to_string(value.size());
         response += "\r\n";
         response += value;
         response += "\r\n";
@@ -403,7 +404,7 @@ Server::process_one(const Request& req)
           response += "VALUE ";
           response += key;
           response += " 0 ";
-          response += std::to_string(value.size());
+          response += sphinx::to_string(value.size());
           response += "\r\n";
           response += value;
           response += "\r\n";
