@@ -35,21 +35,14 @@ limitations under the License.
 /// which eliminates internal fragmentation (object size being smaller than
 /// allocation size) and also reduces external fragmentation (available memory
 /// is in such small blocks that objects cannot be allocated from them) because
-/// segments are compacted from time to time.
+/// segments are expired in full.
 ///
 /// The main entry point to the log-structured memory allocator is the \ref
 /// Log::append() function, which attempts to append a key-value pair to the
 /// log. The function allocates memory one segment at a time. That is, all
 /// allocations are satisfied by the same segment until it runs out of memory.
 /// Furthermore, the allocator first exhausts all memory it manages before
-/// attempting to reclaim space by compacting segments.
-///
-/// Compaction works by walking all the objects in a segment and moving live
-/// objects to other segments. For \ref Log::append(), the compaction process
-/// attempts to reclaim enough space to satisfy the allocation. If an user calls
-/// \ref Log::compact(), they can either specify the amount to reclaim
-/// themselves or, by default, attempt to compact all expired objects (which can
-/// take a long time).
+/// attempting to reclaim space by expiring segments.
 
 namespace sphinx::logmem {
 
