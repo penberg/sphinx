@@ -19,6 +19,8 @@ limitations under the License.
 #include <cstring>
 #include <iostream>
 
+#include <MurmurHash3.h>
+
 namespace sphinx::logmem {
 
 Object::Object(const Key& key, const Blob& blob)
@@ -40,6 +42,14 @@ size_t
 Object::size_of(size_t key_size, size_t blob_size)
 {
   return sizeof(Object) + key_size + blob_size;
+}
+
+Hash
+Object::hash_of(const Key& key)
+{
+  uint32_t hash = 0;
+  MurmurHash3_x86_32(key.data(), key.size(), 1, &hash);
+  return hash;
 }
 
 size_t

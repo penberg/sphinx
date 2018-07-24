@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-#include <MurmurHash3.h>
 #include <sphinx/logmem.h>
 #include <sphinx/memory.h>
 #include <sphinx/protocol.h>
@@ -174,7 +173,7 @@ private:
             std::string_view msg,
             std::optional<sphinx::reactor::SockAddr> dst);
   size_t process_one(const Request& req);
-  size_t find_target(std::string_view key) const;
+  size_t find_target(const sphinx::logmem::Hash& hash) const;
 };
 
 Server::Server(const sphinx::logmem::LogConfig& log_cfg,
@@ -373,7 +372,8 @@ Server::process_one(const Request& req)
       }
       nr_consumed += data_block_size;
       const auto& key = parser.key();
-      auto target_id = find_target(key);
+      auto hash = sphinx::logmem::Object::hash_of(key);
+      auto target_id = find_target(hash);
       std::string_view blob{parser._blob_start, parser._blob_size};
       if (target_id == _reactor->thread_id()) {
         if (this->_log.append(key, blob)) {
@@ -396,7 +396,8 @@ Server::process_one(const Request& req)
     }
     case Parser::State::CmdGet: {
       const auto& key = parser.key();
-      auto target_id = find_target(key);
+      auto hash = sphinx::logmem::Object::hash_of(key);
+      auto target_id = find_target(hash);
       if (target_id == _reactor->thread_id()) {
         auto search = this->_log.find(key);
         if (search) {
@@ -426,14 +427,12 @@ Server::process_one(const Request& req)
 }
 
 size_t
-Server::find_target(std::string_view key) const
+Server::find_target(const sphinx::logmem::Hash& hash) const
 {
   size_t nr_threads = _reactor->nr_threads();
   if (nr_threads == 1) {
     return _reactor->thread_id();
   }
-  uint32_t hash = 0;
-  MurmurHash3_x86_32(key.data(), key.size(), 1, &hash);
   return hash % nr_threads;
 }
 

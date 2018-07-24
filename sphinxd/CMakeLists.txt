@@ -28,6 +28,7 @@ target_link_libraries(sphinxd pthread)
 
 if(GTEST_FOUND)
   add_executable(sphinxd_tests
+      src/MurmurHash3.cpp
       src/logmem.cpp
       test/logmem_test.cpp
       test/main.cpp
@@ -45,6 +46,7 @@ if(BUILD_BENCHMARKS)
       perf/logmem_perf.cpp
       perf/main.cpp
       perf/protocol_perf.cpp
+      src/MurmurHash3.cpp
       src/logmem.cpp
       src/memory.cpp
       ${RAGEL_protocol_OUTPUTS}

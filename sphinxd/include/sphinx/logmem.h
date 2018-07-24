@@ -51,6 +51,9 @@ namespace sphinx::logmem {
 /// \addtogroup logmem-module
 /// @{
 
+/// Object hash type.
+using Hash = uint64_t;
+
 /// Object key type.
 using Key = std::string_view;
 
@@ -69,6 +72,8 @@ public:
   static size_t size_of(const Key& key, const Blob& blob);
   /// \brief Return the size of an object of \ref key_size and \ref blob_size.
   static size_t size_of(size_t key_size, size_t blob_size);
+  /// \brief Return the hash of \ref key.
+  static Hash hash_of(const Key& key);
   /// \brief Construct a \ref Object instance.
   Object(const Key& key, const Blob& blob);
   /// \brief Expire object.
