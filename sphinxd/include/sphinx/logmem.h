@@ -16,6 +16,8 @@ limitations under the License.
 
 #pragma once
 
+#include <sphinx/index.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -128,7 +130,7 @@ struct LogConfig
 /// A log of objects.
 class Log
 {
-  std::unordered_map<Key, Object*> _index;
+  sphinx::index::Index<Key, Object*> _index;
   std::vector<Segment*> _segment_ring;
   size_t _segment_ring_head = 0;
   size_t _segment_ring_tail = 0;

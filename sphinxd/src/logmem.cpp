@@ -188,8 +188,8 @@ std::optional<Blob>
 Log::find(const Key& key) const
 {
   const auto& search = _index.find(key);
-  if (search != _index.end()) {
-    return search->second->blob();
+  if (search) {
+    return search.value()->blob();
   }
   return std::nullopt;
 }
@@ -236,9 +236,9 @@ Log::try_to_append(Segment* segment, const Key& key, const Blob& blob)
   if (!object) {
     return false;
   }
-  auto [it, inserted] = _index.insert_or_assign(object->key(), object);
-  if (!inserted) {
-    it->second->expire();
+  auto old = _index.insert_or_assign(object->key(), object);
+  if (old) {
+    old.value()->expire();
   }
   return true;
 }
@@ -246,10 +246,10 @@ Log::try_to_append(Segment* segment, const Key& key, const Blob& blob)
 bool
 Log::remove(const Key& key)
 {
-  auto it = _index.find(key);
-  if (it != _index.end()) {
-    it->second->expire();
-    _index.erase(it);
+  auto value_opt = _index.find(key);
+  if (value_opt) {
+    value_opt.value()->expire();
+    _index.erase(key);
     return true;
   }
   return false;
