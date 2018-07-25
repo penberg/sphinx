@@ -33,6 +33,8 @@ limitations under the License.
 
 #include "version.h"
 
+static constexpr int cache_line_size = 64;
+
 static std::string program;
 
 static constexpr int DEFAULT_TCP_PORT = 11211;
@@ -545,6 +547,7 @@ struct CpuAffinity
 int
 main(int argc, char* argv[])
 {
+  static_assert(sizeof(Command) <= cache_line_size);
   try {
     program = ::basename(argv[0]);
     auto args = parse_cmd_line(argc, argv);
