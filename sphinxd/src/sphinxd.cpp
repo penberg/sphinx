@@ -91,7 +91,7 @@ Buffer::string_view() const
   return std::string_view{_data.data(), _data.size()};
 }
 
-enum class Opcode
+enum class Opcode : uint8_t
 {
   Set,
   SetOk,
@@ -103,10 +103,10 @@ enum class Opcode
 struct Command
 {
   std::shared_ptr<sphinx::reactor::Socket> sock;
-  size_t thread_id;
-  Opcode op;
   Buffer key;
   Buffer blob;
+  Opcode op;
+  uint8_t thread_id;
 };
 
 struct Connection
