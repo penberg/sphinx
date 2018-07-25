@@ -24,6 +24,21 @@ limitations under the License.
 ///
 /// A SPSC queue is a ring buffer with two indexes to the ring: head and tail. A producer writes new
 /// entries in the queue after the current tail and a consumer reads entries from the head.
+///
+/// While the algorithm was implemented independently, the following implementations were used as
+/// reference:
+///
+///  https://www.scylladb.com/2018/02/15/memory-barriers-seastar-linux/
+///  https://github.com/rigtorp/SPSCQueue
+///  https://github.com/fsaintjacques/disruptor--
+///
+/// Furthermore, the same algorithm is described in the following paper (including proof of
+/// correctness):
+///
+///   Lê, N.M., Guatto, A., Cohen, A. and Pop, A., 2013, October. Correct and
+///   efficient bounded FIFO queues. In Computer Architecture and High Performance
+///   Computing (SBAC-PAD), 2013 25th International Symposium on (pp. 144-151).
+///   IEEE.
 
 namespace sphinx::spsc {
 
@@ -32,9 +47,6 @@ constexpr int cache_line_size = 128;
 /// \addtogroup spsc-queue-module
 /// @{
 
-// https://www.scylladb.com/2018/02/15/memory-barriers-seastar-linux/
-// https://github.com/rigtorp/SPSCQueue
-// https://github.com/fsaintjacques/disruptor--
 template<typename T, size_t N>
 class Queue
 {
@@ -59,8 +71,8 @@ public:
       return false;
     }
     _data[tail] = T{std::forward<Args>(args)...};
-    // The acquire fence here makes sure we construct the element in the queue
-    // before updating tail index to prevent consumer from reading state memory.
+    // The release fence here ensures that message is constructed before we update the tail. This
+    // prevents the consumer from reading stale messages.
     _tail.store(next_tail, std::memory_order_release);
     return true;
   }
@@ -80,9 +92,9 @@ public:
       next_head = 0;
     }
     _data[head].~T();
-    // The release fence here makes sure we destruct the element in the queue
-    // before updating head index to prevent the producer to reuse the memory
-    // too early.
+    // The release fence here ensures that message is destructed before we update the head index.
+    // This prevents the producer from reusing memory for a message, which will be destructed later
+    // thus corrupting the new message.
     _head.store(next_head, std::memory_order_release);
   }
 };
