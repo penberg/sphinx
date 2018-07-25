@@ -103,10 +103,17 @@ enum class Opcode : uint8_t
 struct Command
 {
   std::shared_ptr<sphinx::reactor::Socket> sock;
-  Buffer key;
-  Buffer blob;
+  Buffer buffer;
   Opcode op;
   uint8_t thread_id;
+  uint8_t key_size;
+
+  std::string_view key() const {
+    return buffer.string_view().substr(0, key_size);
+  }
+  std::string_view blob() const {
+    return buffer.string_view().substr(key_size);
+  }
 };
 
 struct Connection
@@ -164,7 +171,7 @@ Server::on_message(void* data)
   auto* cmd = reinterpret_cast<Command*>(data);
   switch (cmd->op) {
     case Opcode::Set: {
-      if (this->_log.append(cmd->key.string_view(), cmd->blob.string_view())) {
+      if (this->_log.append(cmd->key(), cmd->blob())) {
         cmd->op = Opcode::SetOk;
       } else {
         cmd->op = Opcode::SetErrorOutOfMemory;
@@ -185,7 +192,7 @@ Server::on_message(void* data)
       break;
     }
     case Opcode::Get: {
-      const auto &key = cmd->key.string_view();
+      const auto &key = cmd->key();
       auto search = _log.find(key);
       std::string response;
       if (search) {
@@ -296,8 +303,9 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
         Command* cmd = new Command();
         cmd->sock = sock;
         cmd->op = Opcode::Set;
-        cmd->key.append(key);
-        cmd->blob.append(blob);
+        cmd->key_size = key.size();
+        cmd->buffer.append(key);
+        cmd->buffer.append(blob);
         cmd->thread_id = _reactor->thread_id();
         assert(_reactor->send_msg(target_id, cmd)); // FIXME
       }
@@ -326,7 +334,8 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
         Command* cmd = new Command();
         cmd->sock = sock;
         cmd->op = Opcode::Get;
-        cmd->key.append(key);
+        cmd->key_size = key.size();
+        cmd->buffer.append(key);
         cmd->thread_id = _reactor->thread_id();
         assert(_reactor->send_msg(target_id, cmd)); // FIXME
       }
