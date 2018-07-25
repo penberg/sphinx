@@ -47,7 +47,6 @@ struct Args
 {
   std::string listen_addr = DEFAULT_LISTEN_ADDR;
   int tcp_port = DEFAULT_TCP_PORT;
-  int udp_port = DEFAULT_UDP_PORT;
   int memory_limit = DEFAULT_MEMORY_LIMIT; /* in MB */
   int segment_size = DEFAULT_SEGMENT_SIZE; /* in MB */
   int listen_backlog = DEFAULT_LISTEN_BACKLOG;
@@ -92,42 +91,6 @@ Buffer::string_view() const
   return std::string_view{_data.data(), _data.size()};
 }
 
-struct Request
-{
-  std::shared_ptr<sphinx::reactor::Socket> sock;
-  std::optional<sphinx::reactor::SockAddr> dst;
-  std::optional<uint16_t> request_id;
-  std::optional<uint16_t> sequence_num;
-  std::string_view msg;
-};
-
-struct UDPFrame
-{
-  uint16_t request_id;
-  uint16_t sequence_num;
-  uint16_t nr_datagrams;
-  uint16_t reserved;
-};
-
-static std::string
-make_response_frame(const Request& req)
-{
-  std::string frame;
-  if (req.request_id) {
-    uint16_t nr_datagrams = 1;
-    uint16_t reserved = 0;
-    frame.push_back((*req.request_id & 0xff00) >> 8);
-    frame.push_back((*req.request_id & 0x00ff));
-    frame.push_back((*req.sequence_num & 0xff00) >> 8);
-    frame.push_back((*req.sequence_num & 0x00ff));
-    frame.push_back((nr_datagrams & 0xff00) >> 8);
-    frame.push_back((nr_datagrams & 0x00ff));
-    frame.push_back((reserved & 0xff00) >> 8);
-    frame.push_back((reserved & 0x00ff));
-  }
-  return frame;
-}
-
 enum class Opcode
 {
   Set,
@@ -139,11 +102,11 @@ enum class Opcode
 
 struct Command
 {
+  std::shared_ptr<sphinx::reactor::Socket> sock;
   size_t thread_id;
   Opcode op;
   std::string key;
   std::optional<std::string> blob;
-  std::optional<Request> req;
 };
 
 struct Connection
@@ -169,10 +132,7 @@ private:
   void recv(Connection& conn,
             std::shared_ptr<sphinx::reactor::TcpSocket> sock,
             std::string_view msg);
-  void recv(std::shared_ptr<sphinx::reactor::UdpSocket> sock,
-            std::string_view msg,
-            std::optional<sphinx::reactor::SockAddr> dst);
-  size_t process_one(const Request& req);
+  size_t process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::string_view msg);
   size_t find_target(const sphinx::logmem::Hash& hash) const;
 };
 
@@ -191,21 +151,10 @@ Server::Server(const sphinx::logmem::LogConfig& log_cfg,
 void
 Server::serve(const Args& args)
 {
-  if (args.udp_port) {
-    auto recv_fn = [this](std::shared_ptr<sphinx::reactor::UdpSocket> sock,
-                          std::string_view msg,
-                          std::optional<sphinx::reactor::SockAddr> dst) {
-      this->recv(sock, msg, dst);
-    };
-    auto sock =
-      sphinx::reactor::make_udp_socket(args.listen_addr, args.udp_port, std::move(recv_fn));
-    _reactor->recv(std::move(sock));
-  } else {
-    auto accept_fn = [this](int sockfd) { this->accept(sockfd); };
-    auto listener = sphinx::reactor::make_tcp_listener(
-      args.listen_addr, args.tcp_port, args.listen_backlog, std::move(accept_fn));
-    _reactor->accept(std::move(listener));
-  }
+  auto accept_fn = [this](int sockfd) { this->accept(sockfd); };
+  auto listener = sphinx::reactor::make_tcp_listener(
+    args.listen_addr, args.tcp_port, args.listen_backlog, std::move(accept_fn));
+  _reactor->accept(std::move(listener));
   _reactor->run();
 }
 
@@ -224,18 +173,14 @@ Server::on_message(void* data)
       break;
     }
     case Opcode::SetOk: {
-      auto& req = *cmd->req;
-      std::string response = make_response_frame(req);
-      response += "STORED\r\n";
-      req.sock->send(response.c_str(), response.size(), req.dst);
+      std::string response{"STORED\r\n"};
+      cmd->sock->send(response.c_str(), response.size(), std::nullopt);
       delete cmd;
       break;
     }
     case Opcode::SetErrorOutOfMemory: {
-      auto& req = *cmd->req;
-      std::string response = make_response_frame(req);
-      response += "SERVER_ERROR out of memory storing object\r\n";
-      req.sock->send(response.c_str(), response.size(), req.dst);
+      std::string response{"SERVER_ERROR out of memory storing object\r\n"};
+      cmd->sock->send(response.c_str(), response.size(), std::nullopt);
       delete cmd;
       break;
     }
@@ -244,8 +189,7 @@ Server::on_message(void* data)
       if (search) {
         cmd->blob = search;
       }
-      auto& req = *cmd->req;
-      std::string response = make_response_frame(req);
+      std::string response;
       if (cmd->blob) {
         const auto& value = cmd->blob.value();
         response += "VALUE ";
@@ -257,7 +201,7 @@ Server::on_message(void* data)
         response += "\r\n";
       }
       response += "END\r\n";
-      req.sock->send(response.c_str(), response.size(), req.dst);
+      cmd->sock->send(response.c_str(), response.size(), std::nullopt);
       cmd->op = Opcode::GetOk;
       assert(_reactor->send_msg(cmd->thread_id, cmd)); // FIXME
       break;
@@ -296,10 +240,7 @@ Server::recv(Connection& conn,
         conn._rx_buffer.append(msg);
         break;
       }
-      Request req;
-      req.sock = sock;
-      req.msg = msg;
-      size_t nr_consumed = process_one(req);
+      size_t nr_consumed = process_one(sock, msg);
       if (!nr_consumed) {
         conn._rx_buffer.append(msg);
         break;
@@ -313,10 +254,7 @@ Server::recv(Connection& conn,
       if (msg.find('\n') == std::string_view::npos) {
         break;
       }
-      Request req;
-      req.sock = sock;
-      req.msg = msg;
-      size_t nr_consumed = process_one(req);
+      size_t nr_consumed = process_one(sock, msg);
       if (!nr_consumed) {
         break;
       }
@@ -325,48 +263,21 @@ Server::recv(Connection& conn,
   }
 }
 
-void
-Server::recv(std::shared_ptr<sphinx::reactor::UdpSocket> sock,
-             std::string_view msg,
-             std::optional<sphinx::reactor::SockAddr> dst)
-{
-  if (msg.size() < sizeof(UDPFrame)) {
-    /* message is too short */
-    return;
-  }
-  UDPFrame frame;
-  frame.request_id = (msg[0] << 8) | msg[1];
-  frame.sequence_num = (msg[2] << 8) | msg[3];
-  frame.nr_datagrams = (msg[4] << 8) | msg[5];
-  frame.reserved = (msg[6] << 8) | msg[7];
-  msg.remove_prefix(sizeof(UDPFrame));
-  Request req;
-  req.sock = sock;
-  req.dst = dst;
-  req.request_id = frame.request_id;
-  req.sequence_num = frame.sequence_num;
-  req.msg = msg;
-  size_t nr_consumed = process_one(req);
-  msg.remove_prefix(nr_consumed);
-  assert(msg.empty());
-}
-
 size_t
-Server::process_one(const Request& req)
+Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::string_view msg)
 {
   using namespace sphinx::memcache;
-  std::string response = make_response_frame(req);
   Parser parser;
-  size_t nr_consumed = parser.parse(req.msg);
+  size_t nr_consumed = parser.parse(msg);
   switch (parser._state) {
     case Parser::State::Error: {
-      response += "ERROR\r\n";
-      req.sock->send(response.c_str(), response.size(), req.dst);
+      std::string response{"ERROR\r\n"};
+      sock->send(response.c_str(), response.size(), std::nullopt);
       break;
     }
     case Parser::State::CmdSet: {
       size_t data_block_size = parser._blob_size + 2;
-      if (req.msg.size() < (nr_consumed + data_block_size)) {
+      if (msg.size() < (nr_consumed + data_block_size)) {
         nr_consumed = 0;
         break;
       }
@@ -377,19 +288,19 @@ Server::process_one(const Request& req)
       std::string_view blob{parser._blob_start, parser._blob_size};
       if (target_id == _reactor->thread_id()) {
         if (this->_log.append(key, blob)) {
-          response += "STORED\r\n";
-          req.sock->send(response.c_str(), response.size(), req.dst);
+          std::string response{"STORED\r\n"};
+          sock->send(response.c_str(), response.size(), std::nullopt);
         } else {
-          response += "SERVER_ERROR out of memory storing object\r\n";
-          req.sock->send(response.c_str(), response.size(), req.dst);
+          std::string response{"SERVER_ERROR out of memory storing object\r\n"};
+          sock->send(response.c_str(), response.size(), std::nullopt);
         }
       } else {
         Command* cmd = new Command();
+        cmd->sock = sock;
         cmd->op = Opcode::Set;
         cmd->key = key;
         cmd->blob = blob;
         cmd->thread_id = _reactor->thread_id();
-        cmd->req = req;
         assert(_reactor->send_msg(target_id, cmd)); // FIXME
       }
       break;
@@ -399,6 +310,7 @@ Server::process_one(const Request& req)
       auto hash = sphinx::logmem::Object::hash_of(key);
       auto target_id = find_target(hash);
       if (target_id == _reactor->thread_id()) {
+        std::string response;
         auto search = this->_log.find(key);
         if (search) {
           const auto& value = search.value();
@@ -411,13 +323,13 @@ Server::process_one(const Request& req)
           response += "\r\n";
         }
         response += "END\r\n";
-        req.sock->send(response.c_str(), response.size(), req.dst);
+        sock->send(response.c_str(), response.size(), std::nullopt);
       } else {
         Command* cmd = new Command();
+        cmd->sock = sock;
         cmd->op = Opcode::Get;
         cmd->key = key;
         cmd->thread_id = _reactor->thread_id();
-        cmd->req = req;
         assert(_reactor->send_msg(target_id, cmd)); // FIXME
       }
       break;
@@ -501,7 +413,6 @@ static Args
 parse_cmd_line(int argc, char* argv[])
 {
   static struct option long_options[] = {{"port", required_argument, 0, 'p'},
-                                         {"udp-port", required_argument, 0, 'U'},
                                          {"listen", required_argument, 0, 'l'},
                                          {"memory-limit", required_argument, 0, 'm'},
                                          {"segment-size", required_argument, 0, 's'},
@@ -515,13 +426,10 @@ parse_cmd_line(int argc, char* argv[])
                                          {0, 0, 0, 0}};
   Args args;
   int opt, long_index;
-  while ((opt = ::getopt_long(argc, argv, "p:U:l:m:s:b:t:I:i:S", long_options, &long_index)) != -1) {
+  while ((opt = ::getopt_long(argc, argv, "p:l:m:s:b:t:I:i:S", long_options, &long_index)) != -1) {
     switch (opt) {
       case 'p':
         args.tcp_port = std::stoi(optarg);
-        break;
-      case 'U':
-        args.udp_port = std::stoi(optarg);
         break;
       case 'l':
         args.listen_addr = optarg;
