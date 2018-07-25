@@ -106,7 +106,7 @@ struct Command
   size_t thread_id;
   Opcode op;
   std::string key;
-  std::optional<std::string> blob;
+  std::string blob;
 };
 
 struct Connection
@@ -164,7 +164,7 @@ Server::on_message(void* data)
   auto* cmd = reinterpret_cast<Command*>(data);
   switch (cmd->op) {
     case Opcode::Set: {
-      if (this->_log.append(cmd->key, *cmd->blob)) {
+      if (this->_log.append(cmd->key, cmd->blob)) {
         cmd->op = Opcode::SetOk;
       } else {
         cmd->op = Opcode::SetErrorOutOfMemory;
