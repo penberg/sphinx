@@ -186,12 +186,9 @@ Server::on_message(void* data)
     }
     case Opcode::Get: {
       auto search = _log.find(cmd->key);
-      if (search) {
-        cmd->blob = search;
-      }
       std::string response;
-      if (cmd->blob) {
-        const auto& value = cmd->blob.value();
+      if (search) {
+        const auto& value = *search;
         response += "VALUE ";
         response += cmd->key;
         response += " 0 ";
