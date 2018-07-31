@@ -19,6 +19,8 @@ limitations under the License.
 #include <array>
 #include <atomic>
 
+#include <sphinx/hardware.h>
+
 /// \defgroup spsc-queue-module A bounded, single-producer/single-consumer (SPSC) wait-free and
 /// lock-free queue.
 ///
@@ -42,16 +44,14 @@ limitations under the License.
 
 namespace sphinx::spsc {
 
-constexpr int cache_line_size = 128;
-
 /// \addtogroup spsc-queue-module
 /// @{
 
 template<typename T, size_t N>
 class Queue
 {
-  alignas(cache_line_size) std::atomic<size_t> _head = 0;
-  alignas(cache_line_size) std::atomic<size_t> _tail = 0;
+  alignas(hardware::cache_line_size) std::atomic<size_t> _head = 0;
+  alignas(hardware::cache_line_size) std::atomic<size_t> _tail = 0;
   std::array<T, N> _data;
 
 public:

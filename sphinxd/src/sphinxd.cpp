@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+#include <sphinx/hardware.h>
 #include <sphinx/logmem.h>
 #include <sphinx/memory.h>
 #include <sphinx/protocol.h>
@@ -32,8 +33,6 @@ limitations under the License.
 #include <sys/mman.h>
 
 #include "version.h"
-
-static constexpr int cache_line_size = 64;
 
 static std::string program;
 
@@ -547,7 +546,7 @@ struct CpuAffinity
 int
 main(int argc, char* argv[])
 {
-  static_assert(sizeof(Command) <= cache_line_size);
+  static_assert(sizeof(Command) <= sphinx::hardware::cache_line_size);
   try {
     program = ::basename(argv[0]);
     auto args = parse_cmd_line(argc, argv);
