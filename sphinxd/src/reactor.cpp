@@ -325,11 +325,22 @@ Reactor::send_msg(size_t remote_id, void* msg)
   if (!queue.try_to_emplace(msg)) {
     return false;
   }
-  if (_thread_is_sleeping[remote_id].load(std::memory_order_seq_cst)) {
-    _thread_is_sleeping[remote_id].store(false, std::memory_order_seq_cst);
-    wake_up(remote_id);
-  }
+  _pending_wakeups.set(remote_id);
   return true;
+}
+
+void
+Reactor::wake_up_pending()
+{
+  for (size_t id = 0; id < _pending_wakeups.size(); id++) {
+    if (_pending_wakeups.test(id)) {
+      if (_thread_is_sleeping[id].load(std::memory_order_seq_cst)) {
+        _thread_is_sleeping[id].store(false, std::memory_order_seq_cst);
+        wake_up(id);
+      }
+    }
+  }
+  _pending_wakeups.reset();
 }
 
 void

@@ -19,6 +19,7 @@ limitations under the License.
 #include <sphinx/spsc_queue.h>
 
 #include <functional>
+#include <bitset>
 #include <memory>
 #include <optional>
 #include <set>
@@ -137,6 +138,7 @@ protected:
 
   size_t _thread_id;
   size_t _nr_threads;
+  std::bitset<max_nr_threads> _pending_wakeups;
   OnMessageFn _on_message_fn;
 
 public:
@@ -153,6 +155,7 @@ public:
   virtual void run() = 0;
 
 protected:
+  void wake_up_pending();
   void wake_up(size_t thread_id);
   bool has_messages() const;
   bool poll_messages();

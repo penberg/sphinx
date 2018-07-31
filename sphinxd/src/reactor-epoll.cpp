@@ -79,6 +79,7 @@ EpollReactor::run()
 {
   std::array<epoll_event, 128> events;
   for (;;) {
+    wake_up_pending();
     int nr_events = 0;
     if (poll_messages()) {
       // We had messages, speculate that there's more work in sockets:
