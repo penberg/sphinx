@@ -22,7 +22,7 @@ limitations under the License.
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <pthread.h>
-#include <signal.h>
+#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -261,14 +261,10 @@ make_udp_socket(const std::string& iface, int port, UdpRecvFn&& recv_fn)
   throw std::runtime_error("Failed to listen to interface: '" + iface + "'");
 }
 
+int Reactor::_efds[max_nr_threads];
 pthread_t Reactor::_pthread_ids[max_nr_threads];
 std::atomic<bool> Reactor::_thread_is_sleeping[max_nr_threads];
 sphinx::spsc::Queue<void*, Reactor::_msg_queue_size> Reactor::_msg_queues[max_nr_threads][max_nr_threads];
-
-void
-handler([[gnu::unused]] int sig, [[gnu::unused]] siginfo_t* siginfo, [[gnu::unused]] void* data)
-{
-}
 
 std::string
 Reactor::default_backend()
@@ -277,24 +273,12 @@ Reactor::default_backend()
 }
 
 Reactor::Reactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn)
-  : _thread_id{thread_id}
+  : _efd{::eventfd(0, EFD_NONBLOCK)}
+  , _thread_id{thread_id}
   , _nr_threads{nr_threads}
   , _on_message_fn{on_message_fn}
 {
-  sigset_t mask;
-  sigemptyset(&mask);
-  struct sigaction sa;
-  sa.sa_sigaction = handler;
-  sa.sa_mask = mask;
-  sa.sa_flags = SA_SIGINFO | SA_RESTART;
-  if (::sigaction(SIGUSR1, &sa, nullptr) < 0) {
-    throw std::system_error(errno, std::system_category(), "sigaction");
-  }
-
-  sigaddset(&mask, SIGUSR1);
-  if (::pthread_sigmask(SIG_BLOCK, &mask, NULL) < 0) {
-    throw std::system_error(errno, std::system_category(), "pthread_sigmask");
-  }
+  _efds[_thread_id] = _efd;
   _thread_is_sleeping[_thread_id].store(false, std::memory_order_seq_cst);
   _pthread_ids[_thread_id] = pthread_self();
 }
@@ -346,7 +330,9 @@ Reactor::wake_up_pending()
 void
 Reactor::wake_up(size_t thread_id)
 {
-  ::pthread_kill(_pthread_ids[thread_id], SIGUSR1);
+  if (::eventfd_write(_efds[thread_id], 1) < 0) {
+    throw std::system_error(errno, std::system_category(), "eventfd_write");
+  }
 }
 
 bool

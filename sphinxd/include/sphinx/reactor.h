@@ -131,11 +131,13 @@ constexpr int max_nr_threads = 64;
 class Reactor
 {
 protected:
+  static int _efds[max_nr_threads];
   static pthread_t _pthread_ids[max_nr_threads];
   static std::atomic<bool> _thread_is_sleeping[max_nr_threads];
   static constexpr int _msg_queue_size = 1024;
   static sphinx::spsc::Queue<void*, _msg_queue_size> _msg_queues[max_nr_threads][max_nr_threads];
 
+  int _efd;
   size_t _thread_id;
   size_t _nr_threads;
   std::bitset<max_nr_threads> _pending_wakeups;

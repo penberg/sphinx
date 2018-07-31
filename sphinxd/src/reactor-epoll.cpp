@@ -16,7 +16,6 @@ limitations under the License.
 
 #include <sphinx/reactor-epoll.h>
 
-#include <signal.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 
@@ -29,6 +28,12 @@ EpollReactor::EpollReactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on
   : Reactor{thread_id, nr_threads, std::move(on_message_fn)}
   , _epollfd{::epoll_create1(0)}
 {
+  epoll_event ev = {};
+  ev.data.ptr = nullptr;
+  ev.events = EPOLLIN | EPOLLET;
+  if (epoll_ctl(_epollfd, EPOLL_CTL_ADD, _efd, &ev) < 0) {
+    throw std::system_error(errno, std::system_category(), "epoll_ctl");
+  }
 }
 
 EpollReactor::~EpollReactor()
@@ -92,9 +97,7 @@ EpollReactor::run()
         _thread_is_sleeping[_thread_id].store(false, std::memory_order_seq_cst);
         continue;
       }
-      sigset_t sigmask;
-      sigemptyset(&sigmask);
-      nr_events = ::epoll_pwait(_epollfd, events.data(), events.size(), -1, &sigmask);
+      nr_events = ::epoll_wait(_epollfd, events.data(), events.size(), -1);
       _thread_is_sleeping[_thread_id].store(false, std::memory_order_seq_cst);
     }
     if (nr_events == -1 && errno == EINTR) {
