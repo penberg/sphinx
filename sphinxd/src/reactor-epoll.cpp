@@ -87,7 +87,8 @@ EpollReactor::run()
     wake_up_pending();
     int nr_events = 0;
     if (poll_messages()) {
-      // We had messages, speculate that there's more work in sockets:
+      // We had messages, speculate that there will be more message, and
+      // therefore do not sleep:
       nr_events = ::epoll_wait(_epollfd, events.data(), events.size(), 0);
     } else {
       // No messages, attempt to sleep:
