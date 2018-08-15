@@ -33,5 +33,8 @@ public:
   virtual void recv(std::shared_ptr<Socket>&& socket) override;
   virtual void close(std::shared_ptr<Socket> socket) override;
   virtual void run() override;
+
+private:
+  void update_epoll(Pollable* pollable, uint32_t events);
 };
 }
