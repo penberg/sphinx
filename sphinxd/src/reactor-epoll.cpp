@@ -58,6 +58,7 @@ EpollReactor::recv(std::shared_ptr<Socket>&& socket)
 void
 EpollReactor::close(std::shared_ptr<Socket> socket)
 {
+  _epoll_events.erase(socket->fd());
   if (::epoll_ctl(_epollfd, EPOLL_CTL_DEL, socket->fd(), nullptr) < 0) {
     throw std::system_error(errno, std::system_category(), "epoll_ctl");
   }
@@ -114,11 +115,20 @@ EpollReactor::run()
 void
 EpollReactor::update_epoll(Pollable* pollable, uint32_t events)
 {
+  int op = EPOLL_CTL_ADD;
+  auto it = _epoll_events.find(pollable->fd());
+  if (it != _epoll_events.end()) {
+    if (events == it->second) {
+      return;
+    }
+    op = EPOLL_CTL_MOD;
+  }
   ::epoll_event ev = {};
   ev.data.fd = pollable->fd();
   ev.events = events;
-  if (::epoll_ctl(_epollfd, EPOLL_CTL_ADD, pollable->fd(), &ev) < 0) {
+  if (::epoll_ctl(_epollfd, op, pollable->fd(), &ev) < 0) {
     throw std::system_error(errno, std::system_category(), "epoll_ctl");
   }
+  _epoll_events.insert_or_assign(pollable->fd(), events);
 }
 }

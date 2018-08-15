@@ -23,6 +23,7 @@ namespace sphinx::reactor {
 class EpollReactor : public Reactor
 {
   std::unordered_map<int, std::shared_ptr<Pollable>> _pollables;
+  std::unordered_map<int, uint32_t> _epoll_events;
   int _epollfd;
 
 public:
