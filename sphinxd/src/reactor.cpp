@@ -51,7 +51,7 @@ Socket::~Socket()
 }
 
 int
-Socket::sockfd() const
+Socket::fd() const
 {
   return _sockfd;
 }
@@ -84,7 +84,7 @@ TcpListener::accept()
 }
 
 int
-TcpListener::sockfd() const
+TcpListener::fd() const
 {
   return _sockfd;
 }

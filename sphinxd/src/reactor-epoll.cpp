@@ -59,7 +59,7 @@ EpollReactor::recv(std::shared_ptr<Socket>&& socket)
   epoll_event ev = {};
   ev.data.ptr = reinterpret_cast<void*>(socket.get());
   ev.events = EPOLLIN;
-  if (epoll_ctl(_epollfd, EPOLL_CTL_ADD, socket->sockfd(), &ev) < 0) {
+  if (epoll_ctl(_epollfd, EPOLL_CTL_ADD, socket->fd(), &ev) < 0) {
     throw std::system_error(errno, std::system_category(), "epoll_ctl");
   }
   _sockets.emplace(std::move(socket));
@@ -68,10 +68,10 @@ EpollReactor::recv(std::shared_ptr<Socket>&& socket)
 void
 EpollReactor::close(std::shared_ptr<Socket> socket)
 {
-  if (::epoll_ctl(_epollfd, EPOLL_CTL_DEL, socket->sockfd(), nullptr) < 0) {
+  if (::epoll_ctl(_epollfd, EPOLL_CTL_DEL, socket->fd(), nullptr) < 0) {
     throw std::system_error(errno, std::system_category(), "epoll_ctl");
   }
-  if (::shutdown(socket->sockfd(), SHUT_RDWR) < 0) {
+  if (::shutdown(socket->fd(), SHUT_RDWR) < 0) {
     if (errno != ENOTCONN) {
       throw std::system_error(errno, std::system_category(), "close");
     }

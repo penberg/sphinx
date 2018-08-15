@@ -48,6 +48,7 @@ struct Pollable
   virtual ~Pollable()
   {
   }
+  virtual int fd() const = 0;
   virtual void on_pollin() = 0;
 };
 
@@ -60,7 +61,7 @@ public:
   explicit Socket(int sockfd);
   virtual ~Socket();
 
-  int sockfd() const;
+  int fd() const;
   virtual void send(const char* msg, size_t len, std::optional<SockAddr> dst = std::nullopt) = 0;
 };
 
@@ -73,7 +74,7 @@ public:
   explicit TcpListener(int sockfd, TcpAcceptFn&& accept_fn);
   ~TcpListener();
 
-  int sockfd() const;
+  int fd() const;
 
   void on_pollin() override;
 
