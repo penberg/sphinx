@@ -68,7 +68,7 @@ TcpListener::~TcpListener()
 }
 
 void
-TcpListener::on_read_event()
+TcpListener::on_pollin()
 {
   accept();
 }
@@ -167,7 +167,7 @@ TcpSocket::send(const char* msg, size_t len, [[gnu::unused]] std::optional<SockA
 }
 
 void
-TcpSocket::on_read_event()
+TcpSocket::on_pollin()
 {
   constexpr size_t rx_buf_size = 256 * 1024;
   std::array<char, rx_buf_size> rx_buf;
@@ -214,7 +214,7 @@ UdpSocket::send(const char* msg, size_t len, std::optional<SockAddr> dst)
 }
 
 void
-UdpSocket::on_read_event()
+UdpSocket::on_pollin()
 {
   constexpr size_t rx_buf_size = 256 * 1024;
   std::array<char, rx_buf_size> rx_buf;

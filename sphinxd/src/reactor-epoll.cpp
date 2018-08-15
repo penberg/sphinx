@@ -109,10 +109,11 @@ EpollReactor::run()
     }
     for (int i = 0; i < nr_events; i++) {
       epoll_event* event = &events[i];
-      auto* listener = reinterpret_cast<Evented*>(event->data.ptr);
-      if (listener) {
-        listener->on_read_event();
+      auto* pollable = reinterpret_cast<Pollable*>(event->data.ptr);
+      if (!pollable) {
+        continue;
       }
+      pollable->on_pollin();
     }
   }
 }

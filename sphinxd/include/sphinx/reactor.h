@@ -43,13 +43,15 @@ struct SockAddr
 
 using TcpAcceptFn = std::function<void(int sockfd)>;
 
-struct Evented
+struct Pollable
 {
-  virtual ~Evented() {}
-  virtual void on_read_event() = 0;
+  virtual ~Pollable()
+  {
+  }
+  virtual void on_pollin() = 0;
 };
 
-class Socket : public Evented
+class Socket : public Pollable
 {
 protected:
   int _sockfd;
@@ -62,7 +64,7 @@ public:
   virtual void send(const char* msg, size_t len, std::optional<SockAddr> dst = std::nullopt) = 0;
 };
 
-class TcpListener : public Evented
+class TcpListener : public Pollable
 {
   int _sockfd;
   TcpAcceptFn _accept_fn;
@@ -73,7 +75,7 @@ public:
 
   int sockfd() const;
 
-  void on_read_event() override;
+  void on_pollin() override;
 
 private:
   void accept();
@@ -97,7 +99,7 @@ public:
   ~TcpSocket();
   void set_tcp_nodelay(bool nodelay);
   void send(const char* msg, size_t len, std::optional<SockAddr> dst = std::nullopt) override;
-  void on_read_event() override;
+  void on_pollin() override;
 
 private:
   void recv();
@@ -118,7 +120,7 @@ public:
   explicit UdpSocket(int sockfd, UdpRecvFn&& recv_fn);
   ~UdpSocket();
   void send(const char* msg, size_t len, std::optional<SockAddr> dst) override;
-  void on_read_event() override;
+  void on_pollin() override;
 };
 
 std::shared_ptr<UdpSocket>
