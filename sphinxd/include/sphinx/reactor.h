@@ -50,6 +50,7 @@ struct Pollable
   }
   virtual int fd() const = 0;
   virtual void on_pollin() = 0;
+  virtual bool on_pollout() = 0;
 };
 
 class Socket : public Pollable
@@ -62,7 +63,7 @@ public:
   virtual ~Socket();
 
   int fd() const;
-  virtual void send(const char* msg, size_t len, std::optional<SockAddr> dst = std::nullopt) = 0;
+  virtual bool send(const char* msg, size_t len, std::optional<SockAddr> dst = std::nullopt) = 0;
 };
 
 class TcpListener : public Pollable
@@ -77,6 +78,7 @@ public:
   int fd() const;
 
   void on_pollin() override;
+  bool on_pollout() override;
 
 private:
   void accept();
@@ -94,13 +96,15 @@ class TcpSocket
   , public std::enable_shared_from_this<TcpSocket>
 {
   TcpRecvFn _recv_fn;
+  std::vector<char> _tx_buf;
 
 public:
   explicit TcpSocket(int sockfd, TcpRecvFn&& recv_fn);
   ~TcpSocket();
   void set_tcp_nodelay(bool nodelay);
-  void send(const char* msg, size_t len, std::optional<SockAddr> dst = std::nullopt) override;
+  bool send(const char* msg, size_t len, std::optional<SockAddr> dst = std::nullopt) override;
   void on_pollin() override;
+  bool on_pollout() override;
 
 private:
   void recv();
@@ -120,8 +124,9 @@ class UdpSocket
 public:
   explicit UdpSocket(int sockfd, UdpRecvFn&& recv_fn);
   ~UdpSocket();
-  void send(const char* msg, size_t len, std::optional<SockAddr> dst) override;
+  bool send(const char* msg, size_t len, std::optional<SockAddr> dst) override;
   void on_pollin() override;
+  bool on_pollout() override;
 };
 
 std::shared_ptr<UdpSocket>
@@ -156,6 +161,7 @@ public:
   bool send_msg(size_t thread, void* data);
   virtual void accept(std::shared_ptr<TcpListener>&& listener) = 0;
   virtual void recv(std::shared_ptr<Socket>&& socket) = 0;
+  virtual void send(std::shared_ptr<Socket> socket) = 0;
   virtual void close(std::shared_ptr<Socket> socket) = 0;
   virtual void run() = 0;
 

@@ -56,6 +56,13 @@ EpollReactor::recv(std::shared_ptr<Socket>&& socket)
 }
 
 void
+EpollReactor::send(std::shared_ptr<Socket> socket)
+{
+  update_epoll(socket.get(), EPOLLIN | EPOLLOUT);
+  _pollables.emplace(socket->fd(), socket);
+}
+
+void
 EpollReactor::close(std::shared_ptr<Socket> socket)
 {
   _epoll_events.erase(socket->fd());
@@ -107,7 +114,14 @@ EpollReactor::run()
         continue;
       }
       auto pollable = it->second;
-      pollable->on_pollin();
+      if (event->events & EPOLLIN) {
+        pollable->on_pollin();
+      }
+      if (event->events & EPOLLOUT) {
+        if (pollable->on_pollout()) {
+          update_epoll(pollable.get(), EPOLLIN);
+        }
+      }
     }
   }
 }

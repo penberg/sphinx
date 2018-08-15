@@ -31,6 +31,7 @@ public:
   ~EpollReactor();
   virtual void accept(std::shared_ptr<TcpListener>&& listener) override;
   virtual void recv(std::shared_ptr<Socket>&& socket) override;
+  virtual void send(std::shared_ptr<Socket> socket) override;
   virtual void close(std::shared_ptr<Socket> socket) override;
   virtual void run() override;
 

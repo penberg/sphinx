@@ -73,6 +73,12 @@ TcpListener::on_pollin()
   accept();
 }
 
+bool
+TcpListener::on_pollout()
+{
+  return true;
+}
+
 void
 TcpListener::accept()
 {
@@ -151,19 +157,29 @@ TcpSocket::set_tcp_nodelay(bool nodelay)
   }
 }
 
-void
+bool
 TcpSocket::send(const char* msg, size_t len, [[gnu::unused]] std::optional<SockAddr> dst)
 {
+  if (!_tx_buf.empty()) {
+    _tx_buf.insert(_tx_buf.end(), msg, msg + len);
+    return false;
+  }
   ssize_t nr = ::send(_sockfd, msg, len, MSG_NOSIGNAL | MSG_DONTWAIT);
   if ((nr < 0) && (errno == ECONNRESET || errno == EPIPE)) {
-    return;
+    return true;
+  }
+  if ((nr < 0) && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+    _tx_buf.insert(_tx_buf.end(), msg, msg + len);
+    return false;
   }
   if (nr < 0) {
     throw std::system_error(errno, std::system_category(), "send");
   }
-  if (size_t(nr) != len) {
-    throw std::runtime_error("partial send");
+  if (size_t(nr) < len) {
+    _tx_buf.insert(_tx_buf.end(), msg + nr, msg + (len - nr));
+    return false;
   }
+  return true;
 }
 
 void
@@ -183,6 +199,26 @@ TcpSocket::on_pollin()
            std::string_view{rx_buf.data(), std::string_view::size_type(nr)});
 }
 
+bool
+TcpSocket::on_pollout()
+{
+  if (_tx_buf.empty()) {
+    return true;
+  }
+  ssize_t nr = ::send(_sockfd, _tx_buf.data(), _tx_buf.size(), MSG_NOSIGNAL | MSG_DONTWAIT);
+  if ((nr < 0) && (errno == ECONNRESET || errno == EPIPE)) {
+    return true;
+  }
+  if ((nr < 0) && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+    return false;
+  }
+  if (nr < 0) {
+    throw std::system_error(errno, std::system_category(), "send");
+  }
+  _tx_buf.erase(_tx_buf.begin(), _tx_buf.begin() + nr);
+  return _tx_buf.empty();
+}
+
 UdpSocket::UdpSocket(int sockfd, UdpRecvFn&& recv_fn)
   : Socket{sockfd}
   , _recv_fn{recv_fn}
@@ -193,7 +229,7 @@ UdpSocket::~UdpSocket()
 {
 }
 
-void
+bool
 UdpSocket::send(const char* msg, size_t len, std::optional<SockAddr> dst)
 {
   ssize_t nr = ::sendto(_sockfd,
@@ -203,7 +239,7 @@ UdpSocket::send(const char* msg, size_t len, std::optional<SockAddr> dst)
                         reinterpret_cast<::sockaddr*>(&dst->addr),
                         dst->len);
   if ((nr < 0) && (errno == ECONNRESET || errno == EPIPE)) {
-    return;
+    return true;
   }
   if (nr < 0) {
     throw std::system_error(errno, std::system_category(), "send");
@@ -211,6 +247,7 @@ UdpSocket::send(const char* msg, size_t len, std::optional<SockAddr> dst)
   if (size_t(nr) != len) {
     throw std::runtime_error("partial send");
   }
+  return true;
 }
 
 void
@@ -237,6 +274,12 @@ UdpSocket::on_pollin()
   _recv_fn(this->shared_from_this(),
            std::string_view{rx_buf.data(), std::string_view::size_type(nr)},
            src);
+}
+
+bool
+UdpSocket::on_pollout()
+{
+  return true;
 }
 
 std::shared_ptr<UdpSocket>

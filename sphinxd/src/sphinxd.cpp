@@ -148,13 +148,17 @@ Server::on_message(void* data)
     }
     case Opcode::SetOk: {
       std::string response{"STORED\r\n"};
-      cmd->sock->send(response.c_str(), response.size(), std::nullopt);
+      if (!cmd->sock->send(response.c_str(), response.size(), std::nullopt)) {
+        _reactor->send(cmd->sock);
+      }
       delete cmd;
       break;
     }
     case Opcode::SetErrorOutOfMemory: {
       std::string response{"SERVER_ERROR out of memory storing object\r\n"};
-      cmd->sock->send(response.c_str(), response.size(), std::nullopt);
+      if (!cmd->sock->send(response.c_str(), response.size(), std::nullopt)) {
+        _reactor->send(cmd->sock);
+      }
       delete cmd;
       break;
     }
@@ -182,7 +186,9 @@ Server::on_message(void* data)
         response += "\r\n";
       }
       response += "END\r\n";
-      cmd->sock->send(response.c_str(), response.size(), std::nullopt);
+      if (!cmd->sock->send(response.c_str(), response.size(), std::nullopt)) {
+        _reactor->send(cmd->sock);
+      }
       delete cmd;
       break;
     }
@@ -248,7 +254,9 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
   switch (parser._state) {
     case Parser::State::Error: {
       std::string response{"ERROR\r\n"};
-      sock->send(response.c_str(), response.size(), std::nullopt);
+      if (!sock->send(response.c_str(), response.size(), std::nullopt)) {
+        _reactor->send(sock);
+      }
       break;
     }
     case Parser::State::CmdSet: {
@@ -265,10 +273,14 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
       if (target_id == _reactor->thread_id()) {
         if (this->_log.append(key, blob)) {
           std::string response{"STORED\r\n"};
-          sock->send(response.c_str(), response.size(), std::nullopt);
+          if (!sock->send(response.c_str(), response.size(), std::nullopt)) {
+            _reactor->send(sock);
+          }
         } else {
           std::string response{"SERVER_ERROR out of memory storing object\r\n"};
-          sock->send(response.c_str(), response.size(), std::nullopt);
+          if (!sock->send(response.c_str(), response.size(), std::nullopt)) {
+            _reactor->send(sock);
+          }
         }
       } else {
         Command* cmd = new Command();
@@ -300,7 +312,9 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
           response += "\r\n";
         }
         response += "END\r\n";
-        sock->send(response.c_str(), response.size(), std::nullopt);
+        if (!sock->send(response.data(), response.size(), std::nullopt)) {
+          _reactor->send(sock);
+	}
       } else {
         Command* cmd = new Command();
         cmd->sock = sock;
