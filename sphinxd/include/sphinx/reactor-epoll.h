@@ -22,14 +22,13 @@ namespace sphinx::reactor {
 
 class EpollReactor : public Reactor
 {
-  std::vector<std::unique_ptr<TcpListener>> _tcp_listeners;
-  std::set<std::shared_ptr<Socket>> _sockets;
+  std::unordered_map<int, std::shared_ptr<Pollable>> _pollables;
   int _epollfd;
 
 public:
   EpollReactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn);
   ~EpollReactor();
-  virtual void accept(std::unique_ptr<TcpListener>&& listener) override;
+  virtual void accept(std::shared_ptr<TcpListener>&& listener) override;
   virtual void recv(std::shared_ptr<Socket>&& socket) override;
   virtual void close(std::shared_ptr<Socket> socket) override;
   virtual void run() override;

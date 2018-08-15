@@ -106,7 +106,7 @@ lookup_addresses(const std::string& iface, int port, int sock_type)
   return ret;
 }
 
-std::unique_ptr<TcpListener>
+std::shared_ptr<TcpListener>
 make_tcp_listener(const std::string& iface, int port, int backlog, TcpAcceptFn&& accept_fn)
 {
   auto* addresses = lookup_addresses(iface, port, SOCK_STREAM);
@@ -126,7 +126,7 @@ make_tcp_listener(const std::string& iface, int port, int backlog, TcpAcceptFn&&
       continue;
     }
     freeaddrinfo(addresses);
-    return std::make_unique<TcpListener>(sockfd, std::move(accept_fn));
+    return std::make_shared<TcpListener>(sockfd, std::move(accept_fn));
   }
   freeaddrinfo(addresses);
   throw std::runtime_error("Failed to listen to interface: '" + iface + "'");

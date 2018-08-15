@@ -42,17 +42,17 @@ EpollReactor::~EpollReactor()
 }
 
 void
-EpollReactor::accept(std::unique_ptr<TcpListener>&& listener)
+EpollReactor::accept(std::shared_ptr<TcpListener>&& listener)
 {
   update_epoll(listener.get(), EPOLLIN);
-  _tcp_listeners.emplace_back(std::move(listener));
+  _pollables.emplace(listener->fd(), std::move(listener));
 }
 
 void
 EpollReactor::recv(std::shared_ptr<Socket>&& socket)
 {
   update_epoll(socket.get(), EPOLLIN);
-  _sockets.emplace(std::move(socket));
+  _pollables.emplace(socket->fd(), std::move(socket));
 }
 
 void
@@ -66,7 +66,7 @@ EpollReactor::close(std::shared_ptr<Socket> socket)
       throw std::system_error(errno, std::system_category(), "close");
     }
   }
-  _sockets.erase(socket);
+  _pollables.erase(socket->fd());
 }
 
 void
@@ -99,10 +99,13 @@ EpollReactor::run()
     }
     for (int i = 0; i < nr_events; i++) {
       epoll_event* event = &events[i];
-      auto* pollable = reinterpret_cast<Pollable*>(event->data.ptr);
-      if (!pollable) {
+      auto fd = event->data.fd;
+      auto it = _pollables.find(fd);
+      if (it == _pollables.end()) {
+        ::epoll_ctl(_epollfd, EPOLL_CTL_DEL, fd, nullptr);
         continue;
       }
+      auto pollable = it->second;
       pollable->on_pollin();
     }
   }
@@ -112,7 +115,7 @@ void
 EpollReactor::update_epoll(Pollable* pollable, uint32_t events)
 {
   ::epoll_event ev = {};
-  ev.data.ptr = reinterpret_cast<void*>(pollable);
+  ev.data.fd = pollable->fd();
   ev.events = events;
   if (::epoll_ctl(_epollfd, EPOLL_CTL_ADD, pollable->fd(), &ev) < 0) {
     throw std::system_error(errno, std::system_category(), "epoll_ctl");

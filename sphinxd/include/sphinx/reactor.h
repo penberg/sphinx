@@ -82,7 +82,7 @@ private:
   void accept();
 };
 
-std::unique_ptr<TcpListener>
+std::shared_ptr<TcpListener>
 make_tcp_listener(const std::string& iface, int port, int backlog, TcpAcceptFn&& recv_fn);
 
 class TcpSocket;
@@ -154,7 +154,7 @@ public:
   size_t thread_id() const;
   size_t nr_threads() const;
   bool send_msg(size_t thread, void* data);
-  virtual void accept(std::unique_ptr<TcpListener>&& listener) = 0;
+  virtual void accept(std::shared_ptr<TcpListener>&& listener) = 0;
   virtual void recv(std::shared_ptr<Socket>&& socket) = 0;
   virtual void close(std::shared_ptr<Socket> socket) = 0;
   virtual void run() = 0;
