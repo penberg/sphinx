@@ -28,6 +28,5 @@ static constexpr int cache_line_size =
 #else
 #error "L1 cache line size is not defined for this architecture."
 #endif
-
 }
 }
