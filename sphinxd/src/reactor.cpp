@@ -307,7 +307,8 @@ make_udp_socket(const std::string& iface, int port, UdpRecvFn&& recv_fn)
 int Reactor::_efds[max_nr_threads];
 pthread_t Reactor::_pthread_ids[max_nr_threads];
 std::atomic<bool> Reactor::_thread_is_sleeping[max_nr_threads];
-sphinx::spsc::Queue<void*, Reactor::_msg_queue_size> Reactor::_msg_queues[max_nr_threads][max_nr_threads];
+sphinx::spsc::Queue<void*, Reactor::_msg_queue_size> Reactor::_msg_queues[max_nr_threads]
+                                                                         [max_nr_threads];
 
 std::string
 Reactor::default_backend()

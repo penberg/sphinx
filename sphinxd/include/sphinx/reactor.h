@@ -18,8 +18,8 @@ limitations under the License.
 
 #include <sphinx/spsc_queue.h>
 
-#include <functional>
 #include <bitset>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <set>
