@@ -198,21 +198,25 @@ Server::on_message(void* data)
       std::string response;
       if (search) {
         const auto& value = *search;
-        response += "VALUE ";
-        response += key;
-        response += " 0 ";
-        response += sphinx::to_string(value.size());
-        response += "\r\n";
-        response += value;
-        response += "\r\n";
+	cmd->buffer.append(value);
       }
-      response += "END\r\n";
-      cmd->sock->send(response.c_str(), response.size(), std::nullopt);
       cmd->op = Opcode::GetOk;
       assert(_reactor->send_msg(cmd->thread_id, cmd)); // FIXME
       break;
     }
     case Opcode::GetOk: {
+      std::string response;
+      if (!cmd->blob().empty()) {
+        response += "VALUE ";
+        response += cmd->key();
+        response += " 0 ";
+        response += sphinx::to_string(cmd->blob().size());
+        response += "\r\n";
+        response += cmd->blob();
+        response += "\r\n";
+      }
+      response += "END\r\n";
+      cmd->sock->send(response.c_str(), response.size(), std::nullopt);
       delete cmd;
       break;
     }
