@@ -20,8 +20,8 @@ limitations under the License.
 
 namespace sphinx {
 
-inline
-std::string to_string(unsigned long n)
+inline std::string
+to_string(unsigned long n)
 {
   if (n != 0) {
     constexpr auto size = 20;
