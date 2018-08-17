@@ -75,10 +75,12 @@ struct Command
   uint8_t thread_id;
   uint8_t key_size;
 
-  std::string_view key() const {
+  std::string_view key() const
+  {
     return buffer.string_view().substr(0, key_size);
   }
-  std::string_view blob() const {
+  std::string_view blob() const
+  {
     return buffer.string_view().substr(key_size);
   }
 };
@@ -163,12 +165,12 @@ Server::on_message(void* data)
       break;
     }
     case Opcode::Get: {
-      const auto &key = cmd->key();
+      const auto& key = cmd->key();
       auto search = _log.find(key);
       std::string response;
       if (search) {
         const auto& value = *search;
-	cmd->buffer.append(value);
+        cmd->buffer.append(value);
       }
       cmd->op = Opcode::GetOk;
       assert(_reactor->send_msg(cmd->thread_id, cmd)); // FIXME
@@ -314,7 +316,7 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
         response += "END\r\n";
         if (!sock->send(response.data(), response.size(), std::nullopt)) {
           _reactor->send(sock);
-	}
+        }
       } else {
         Command* cmd = new Command();
         cmd->sock = sock;
@@ -369,7 +371,8 @@ print_usage()
             << DEFAULT_NR_THREADS << ")" << std::endl;
   std::cout << "  -I, --io-backend name       I/O backend (default: "
             << sphinx::reactor::Reactor::default_backend() << ")" << std::endl;
-  std::cout << "  -i, --isolate-cpus list     list of CPUs to isolate application threads" << std::endl;
+  std::cout << "  -i, --isolate-cpus list     list of CPUs to isolate application threads"
+            << std::endl;
   std::cout << "  -S, --sched-fifo            use SCHED_FIFO scheduling policy" << std::endl;
   std::cout << "      --help                  print this help text and exit" << std::endl;
   std::cout << "      --version               print Sphinx version and exit" << std::endl;
