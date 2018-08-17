@@ -30,7 +30,9 @@ target_link_libraries(sphinxd pthread)
 if(GTEST_FOUND)
   add_executable(sphinxd_tests
       src/MurmurHash3.cpp
+      src/buffer.cpp
       src/logmem.cpp
+      test/buffer_test.cpp
       test/logmem_test.cpp
       test/main.cpp
       test/protocol_test.cpp
