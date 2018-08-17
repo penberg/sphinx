@@ -46,10 +46,12 @@ endif()
 
 if(BUILD_BENCHMARKS)
   add_executable(sphinxd_perf
+      perf/buffer_perf.cpp
       perf/logmem_perf.cpp
       perf/main.cpp
       perf/protocol_perf.cpp
       src/MurmurHash3.cpp
+      src/buffer.cpp
       src/logmem.cpp
       src/memory.cpp
       ${RAGEL_protocol_OUTPUTS}
