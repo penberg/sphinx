@@ -17,6 +17,7 @@ include_directories(
 
 add_executable(sphinxd
     src/MurmurHash3.cpp
+    src/buffer.cpp
     src/logmem.cpp
     src/memory.cpp
     src/reactor.cpp

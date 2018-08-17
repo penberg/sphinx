@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+#include <sphinx/buffer.h>
 #include <sphinx/hardware.h>
 #include <sphinx/logmem.h>
 #include <sphinx/memory.h>
@@ -57,41 +58,6 @@ struct Args
   bool sched_fifo = false;
 };
 
-class Buffer
-{
-  std::vector<char> _data;
-
-public:
-  bool is_empty() const;
-  void append(std::string_view data);
-  void remove_prefix(size_t n);
-  std::string_view string_view() const;
-};
-
-bool
-Buffer::is_empty() const
-{
-  return _data.empty();
-}
-
-void
-Buffer::append(std::string_view data)
-{
-  _data.insert(_data.end(), data.data(), data.data() + data.size());
-}
-
-void
-Buffer::remove_prefix(size_t n)
-{
-  _data.erase(_data.begin(), _data.begin() + n);
-}
-
-std::string_view
-Buffer::string_view() const
-{
-  return std::string_view{_data.data(), _data.size()};
-}
-
 enum class Opcode : uint8_t
 {
   Set,
@@ -104,7 +70,7 @@ enum class Opcode : uint8_t
 struct Command
 {
   std::shared_ptr<sphinx::reactor::Socket> sock;
-  Buffer buffer;
+  sphinx::buffer::Buffer buffer;
   Opcode op;
   uint8_t thread_id;
   uint8_t key_size;
@@ -119,7 +85,7 @@ struct Command
 
 struct Connection
 {
-  Buffer _rx_buffer;
+  sphinx::buffer::Buffer _rx_buffer;
 };
 
 class Server
