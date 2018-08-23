@@ -81,7 +81,7 @@ def measure(args):
 
     for out in outputs:
         out.write(
-            "Sample\tConcurrency\tavg\tstd\tmin\tp5\tp10\tp90\tp95\tp99\tQPS\tRX\tTX\n")
+            "Sample\tConcurrency\tavg\tstd\tmin\tp1\tp5\tp10\tp20\tp50\tp80\tp90\tp95\tp99\tQPS\tRX\tTX\n")
         out.flush()
 
     runner = Runner(args)
@@ -103,15 +103,19 @@ def measure(args):
                 raw_client_output = subprocess.check_output(client_cmd)
                 client_output = str(raw_client_output)
 
-                latency_regex = r"%s\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)" % args.scenario
+                latency_regex = r"%s\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)" % args.scenario
                 avg = re.search(latency_regex, client_output).group(1)
                 std = re.search(latency_regex, client_output).group(2)
                 min_ = re.search(latency_regex, client_output).group(3)
-                p5 = re.search(latency_regex, client_output).group(4)
-                p10 = re.search(latency_regex, client_output).group(5)
-                p90 = re.search(latency_regex, client_output).group(6)
-                p95 = re.search(latency_regex, client_output).group(7)
-                p99 = re.search(latency_regex, client_output).group(8)
+                p1 = re.search(latency_regex, client_output).group(4)
+                p5 = re.search(latency_regex, client_output).group(5)
+                p10 = re.search(latency_regex, client_output).group(6)
+                p20 = re.search(latency_regex, client_output).group(7)
+                p50 = re.search(latency_regex, client_output).group(8)
+                p80 = re.search(latency_regex, client_output).group(9)
+                p90 = re.search(latency_regex, client_output).group(10)
+                p95 = re.search(latency_regex, client_output).group(11)
+                p99 = re.search(latency_regex, client_output).group(12)
 
                 qps_regex = r"Total QPS = (\d+.\d+)"
                 qps = re.search(qps_regex, client_output).group(1)
@@ -122,8 +126,8 @@ def measure(args):
                 tx_regex = r"TX\s+\d+ bytes :\s+(\d+.\d+) MB/s"
                 tx = re.search(tx_regex, client_output).group(1)
 
-                result = "%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (
-                    sample + 1, client_conn, avg, std, min_, p5, p10, p90, p95, p99, qps, rx, tx)
+                result = "%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (
+                    sample + 1, client_conn, avg, std, min_, p1, p5, p10, p20, p50, p80, p90, p95, p99, qps, rx, tx)
 
                 for out in outputs:
                     out.write(result)
