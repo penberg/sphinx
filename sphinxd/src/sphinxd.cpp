@@ -494,7 +494,7 @@ server_thread(size_t thread_id, std::optional<int> cpu_id, const Args& args)
         throw std::system_error(errno, std::system_category(), "pthread_setschedparam");
       }
     }
-    size_t mem_size = args.memory_limit * 1024 * 1024;
+    size_t mem_size = size_t(args.memory_limit) * 1024 * 1024;
     sphinx::memory::Memory memory = sphinx::memory::Memory::mmap(mem_size / args.nr_threads);
     sphinx::logmem::LogConfig log_cfg;
     log_cfg.segment_size = args.segment_size * 1024 * 1024;
