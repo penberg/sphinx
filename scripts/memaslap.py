@@ -107,7 +107,7 @@ def measure(args):
 
             client_concurrency = args.client_threads * client_conn
 
-            client_cmd = [args.client_cmd]
+            client_cmd = ['ssh', args.client_host, args.client_cmd]
             client_cmd += ['-s', "%s:%d" %
                            (args.server_host, args.server_tcp_port)]
             client_cmd += ['--threads', str(args.client_threads)]
@@ -162,6 +162,8 @@ def parse_args():
                         required=True, help="amount of server memory to use in megabytes")
     parser.add_argument("--server-cpu-affinity", metavar='LIST', type=str, required=False, default=None,
                         help="list of processor to run server threads on (default: disabled). For example, use '--server-cpu-affinity 0,2-3', to run server threads on CPUs 0, 2, and 3.")
+    parser.add_argument("--client-host", metavar="HOST", type=str,
+                        required=True, help="host name of the client")
     parser.add_argument("--client-cmd", metavar='CMD', type=str, required=True,
                         help="command to start the client with. For example, use '--client-cmd ./memaslap' to start 'memaslap' executable from local diretory")
     parser.add_argument("--client-threads", metavar='N', type=int,
