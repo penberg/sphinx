@@ -105,12 +105,15 @@ def measure(args):
 
             runner.start_server()
 
-            client_concurrency = args.client_threads * client_conn
+            raw_client_threads = subprocess.check_output(
+                ['ssh', args.client_host, 'nproc'])
+            client_threads = int(raw_client_threads.strip())
+            client_concurrency = client_threads * client_conn
 
             client_cmd = ['ssh', args.client_host, args.client_cmd]
             client_cmd += ['-s', "%s:%d" %
                            (args.server_host, args.server_tcp_port)]
-            client_cmd += ['--threads', str(args.client_threads)]
+            client_cmd += ['--threads', str(client_threads)]
             client_cmd += ['--time', "%ds" % (args.duration)]
             client_cmd += ['--concurrency', str(client_concurrency)]
             client_cmd += ['--fixed_size', "200"]
@@ -166,8 +169,6 @@ def parse_args():
                         required=True, help="host name of the client")
     parser.add_argument("--client-cmd", metavar='CMD', type=str, required=True,
                         help="command to start the client with. For example, use '--client-cmd ./memaslap' to start 'memaslap' executable from local diretory")
-    parser.add_argument("--client-threads", metavar='N', type=int,
-                        required=True, help="number of client threads to use")
     parser.add_argument("--client-connections", metavar='RANGE', type=str, required=True,
                         help="range of number of client connections to use. For example, use '--client-connections 10,21,5', to run with 10, 15, and 20 client connections.")
     parser.add_argument("--samples", metavar='N', type=int, required=True,
