@@ -105,12 +105,14 @@ def measure(args):
 
             runner.start_server()
 
+            client_concurrency = args.client_threads * client_conn
+
             client_cmd = [args.client_cmd]
             client_cmd += ['-s', "%s:%d" %
                            (args.server_host, args.server_tcp_port)]
             client_cmd += ['--threads', str(args.client_threads)]
             client_cmd += ['--time', "%ds" % (args.duration)]
-            client_cmd += ['--concurrency', str(client_conn)]
+            client_cmd += ['--concurrency', str(client_concurrency)]
             client_cmd += ['--fixed_size', "200"]
             print("# client command = %s" % ' '.join(client_cmd))
 
@@ -134,7 +136,7 @@ def measure(args):
                 cpu_idle = re.search(sar_regex, sar_output).group(6)
 
                 result = "%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (
-                    sample + 1, client_conn, tps, net_rate, cpu_user, cpu_nice, cpu_system, cpu_iowait, cpu_steal, cpu_idle)
+                    sample + 1, client_concurrency, tps, net_rate, cpu_user, cpu_nice, cpu_system, cpu_iowait, cpu_steal, cpu_idle)
 
                 for out in outputs:
                     out.write(result)
