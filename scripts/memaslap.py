@@ -94,7 +94,12 @@ def measure(args):
 
     for out in outputs:
         out.write(
-            "Sample\tConcurrency\tTPS\tNet_rate\tCPU_user\tCPU_nice\tCPU_system\tCPU_iowait\tCPU_steal\tCPU_idle\n")
+            "Sample\tConcurrency\tCPU_user\tCPU_nice\tCPU_system\tCPU_iowait\tCPU_steal\tCPU_idle")
+        i = 0
+        for client_host in args.client_host:
+            out.write("\tTPS_%d\tNet_rate_%d" % (i, i))
+            i += 1
+        out.write("\n")
         out.flush()
 
     runner = Runner(args)
@@ -105,30 +110,37 @@ def measure(args):
 
             runner.start_server()
 
-            raw_client_threads = subprocess.check_output(
-                ['ssh', args.client_host, 'nproc'])
-            client_threads = int(raw_client_threads.strip())
-            client_concurrency = client_threads * client_conn
+            total_concurrency = 0
+            client_cmds = []
+            for client_host in args.client_host:
+                raw_client_threads = subprocess.check_output(
+                    ['ssh', client_host, 'nproc'])
+                client_threads = int(raw_client_threads.strip())
+                client_concurrency = client_threads * client_conn
 
-            client_cmd = ['ssh', args.client_host, args.client_cmd]
-            client_cmd += ['-s', "%s:%d" %
-                           (args.server_host, args.server_tcp_port)]
-            client_cmd += ['--threads', str(client_threads)]
-            client_cmd += ['--time', "%ds" % (args.duration)]
-            client_cmd += ['--concurrency', str(client_concurrency)]
-            client_cmd += ['--fixed_size', "200"]
-            print("# client command = %s" % ' '.join(client_cmd))
+                client_cmd = ['ssh', client_host, args.client_cmd]
+                client_cmd += ['-s', "%s:%d" %
+                               (args.server_host, args.server_tcp_port)]
+                client_cmd += ['--threads', str(client_threads)]
+                client_cmd += ['--time', "%ds" % (args.duration)]
+                client_cmd += ['--concurrency', str(client_concurrency)]
+                client_cmd += ['--fixed_size', "200"]
+                client_cmds += [client_cmd]
+
+                total_concurrency += client_concurrency
 
             if not args.dry_run:
+                client_procs = []
+                for client_cmd in client_cmds:
+                    print("# client command = %s" % ' '.join(client_cmd))
+                    client_proc = subprocess.Popen(
+                        client_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    client_procs += [client_proc]
                 runner.start_sar()
-                raw_client_output = subprocess.check_output(client_cmd)
+                for client_proc in client_procs:
+                    client_proc.wait()
                 runner.kill_sar()
-                client_output = str(raw_client_output)
                 sar_output = str(runner.sar_output())
-
-                regex = r" TPS: (\d+) Net_rate: (\d+\.\d+)M/s"
-                tps = re.search(regex, client_output).group(1)
-                net_rate = re.search(regex, client_output).group(2)
 
                 sar_regex = r"Average:.*all\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)\s+(\d+.\d+)"
                 cpu_user = re.search(sar_regex, sar_output).group(1)
@@ -138,8 +150,18 @@ def measure(args):
                 cpu_steal = re.search(sar_regex, sar_output).group(5)
                 cpu_idle = re.search(sar_regex, sar_output).group(6)
 
-                result = "%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % (
-                    sample + 1, client_concurrency, tps, net_rate, cpu_user, cpu_nice, cpu_system, cpu_iowait, cpu_steal, cpu_idle)
+                result = "%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s" % (
+                    sample + 1, total_concurrency, cpu_user, cpu_nice, cpu_system, cpu_iowait, cpu_steal, cpu_idle)
+
+                for client_proc in client_procs:
+                    raw_client_output = client_proc.communicate()[0]
+                    client_output = str(raw_client_output)
+                    regex = r" TPS: (\d+) Net_rate: (\d+\.\d+)M/s"
+                    tps = re.search(regex, client_output).group(1)
+                    net_rate = re.search(regex, client_output).group(2)
+                    result += "\t%s\t%s" % (tps, net_rate)
+
+                result += "\n"
 
                 for out in outputs:
                     out.write(result)
@@ -165,7 +187,7 @@ def parse_args():
                         required=True, help="amount of server memory to use in megabytes")
     parser.add_argument("--server-cpu-affinity", metavar='LIST', type=str, required=False, default=None,
                         help="list of processor to run server threads on (default: disabled). For example, use '--server-cpu-affinity 0,2-3', to run server threads on CPUs 0, 2, and 3.")
-    parser.add_argument("--client-host", metavar="HOST", type=str,
+    parser.add_argument("--client-host", metavar="HOST", type=str, action='append',
                         required=True, help="host name of the client")
     parser.add_argument("--client-cmd", metavar='CMD', type=str, required=True,
                         help="command to start the client with. For example, use '--client-cmd ./memaslap' to start 'memaslap' executable from local diretory")
@@ -186,6 +208,7 @@ def main():
     args = parse_args()
 
     measure(args)
+
 
 if __name__ == '__main__':
     main()
