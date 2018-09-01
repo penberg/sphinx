@@ -36,6 +36,8 @@ class Runner:
         self.server_cmd += ['-p', str(args.server_tcp_port)]
         self.server_cmd += ['-t', str(args.server_threads)]
         self.server_cmd += ['-m', str(args.server_memory)]
+        if args.server_cpu_isolate:
+            self.server_cmd += ['-i', args.server_cpu_isolate]
 
         self.server_pattern = os.path.basename(args.server_cmd)
         self.pkill_cmd = self.ssh_cmd + ["pkill", self.server_pattern]
@@ -153,6 +155,8 @@ def parse_args():
                         required=True, help="amount of server memory to use in megabytes")
     parser.add_argument("--server-cpu-affinity", metavar='LIST', type=str, required=False, default=None,
                         help="list of processor to run server threads on (default: disabled). For example, use '--server-cpu-affinity 0,2-3', to run server threads on CPUs 0, 2, and 3.")
+    parser.add_argument("--server-cpu-isolate", metavar='LIST', type=str, required=False, default=None,
+                        help="list of processor to isolate server threads from (default: disabled). For example, use '--server-cpu-isolate 0,2-3', to not run server threads on CPUs 0, 2, and 3.")
     parser.add_argument("--client-cmd", metavar='CMD', type=str, required=True,
                         help="command to start the client with. For example, use '--client-cmd ./mutilate' to start 'mutilate' executable from local diretory")
     parser.add_argument("--client-threads", metavar='N', type=int,
