@@ -109,6 +109,7 @@ private:
             std::shared_ptr<sphinx::reactor::TcpSocket> sock,
             std::string_view msg);
   size_t process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::string_view msg);
+  void respond(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view msg);
   size_t find_target(const sphinx::logmem::Hash& hash) const;
 };
 
@@ -149,18 +150,14 @@ Server::on_message(void* data)
       break;
     }
     case Opcode::SetOk: {
-      std::string response{"STORED\r\n"};
-      if (!cmd->sock->send(response.c_str(), response.size(), std::nullopt)) {
-        _reactor->send(cmd->sock);
-      }
+      static std::string stored{"STORED\r\n"};
+      respond(cmd->sock, stored);
       delete cmd;
       break;
     }
     case Opcode::SetErrorOutOfMemory: {
-      std::string response{"SERVER_ERROR out of memory storing object\r\n"};
-      if (!cmd->sock->send(response.c_str(), response.size(), std::nullopt)) {
-        _reactor->send(cmd->sock);
-      }
+      static std::string out_of_memory{"SERVER_ERROR out of memory storing object\r\n"};
+      respond(cmd->sock, out_of_memory);
       delete cmd;
       break;
     }
@@ -188,9 +185,7 @@ Server::on_message(void* data)
         response += "\r\n";
       }
       response += "END\r\n";
-      if (!cmd->sock->send(response.c_str(), response.size(), std::nullopt)) {
-        _reactor->send(cmd->sock);
-      }
+      respond(cmd->sock, response);
       delete cmd;
       break;
     }
@@ -255,10 +250,8 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
   size_t nr_consumed = parser.parse(msg);
   switch (parser._state) {
     case Parser::State::Error: {
-      std::string response{"ERROR\r\n"};
-      if (!sock->send(response.c_str(), response.size(), std::nullopt)) {
-        _reactor->send(sock);
-      }
+      static std::string error{"ERROR\r\n"};
+      respond(sock, error);
       break;
     }
     case Parser::State::CmdSet: {
@@ -274,15 +267,11 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
       std::string_view blob{parser._blob_start, parser._blob_size};
       if (target_id == _reactor->thread_id()) {
         if (this->_log.append(key, blob)) {
-          std::string response{"STORED\r\n"};
-          if (!sock->send(response.c_str(), response.size(), std::nullopt)) {
-            _reactor->send(sock);
-          }
+          static std::string stored{"STORED\r\n"};
+          respond(sock, stored);
         } else {
-          std::string response{"SERVER_ERROR out of memory storing object\r\n"};
-          if (!sock->send(response.c_str(), response.size(), std::nullopt)) {
-            _reactor->send(sock);
-          }
+          static std::string out_of_memory{"SERVER_ERROR out of memory storing object\r\n"};
+          respond(sock, out_of_memory);
         }
       } else {
         Command* cmd = new Command();
@@ -314,9 +303,7 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
           response += "\r\n";
         }
         response += "END\r\n";
-        if (!sock->send(response.data(), response.size(), std::nullopt)) {
-          _reactor->send(sock);
-        }
+        respond(sock, response);
       } else {
         Command* cmd = new Command();
         cmd->sock = sock;
@@ -330,6 +317,14 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
     }
   }
   return nr_consumed;
+}
+
+void
+Server::respond(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view msg)
+{
+  if (!sock->send(msg.data(), msg.size(), std::nullopt)) {
+    _reactor->send(sock);
+  }
 }
 
 size_t
