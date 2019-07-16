@@ -75,7 +75,7 @@ public:
   explicit TcpListener(int sockfd, TcpAcceptFn&& accept_fn);
   ~TcpListener();
 
-  int fd() const;
+  int fd() const override;
 
   void on_pollin() override;
   bool on_pollout() override;
