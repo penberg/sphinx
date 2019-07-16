@@ -58,17 +58,11 @@ struct Args
   bool sched_fifo = false;
 };
 
-enum class Opcode : uint8_t
-{
-  Set,
-  Get,
-};
-
 struct Command
 {
   std::shared_ptr<sphinx::reactor::Socket> sock;
   sphinx::buffer::Buffer buffer;
-  Opcode op;
+  sphinx::memcache::Opcode op;
   uint8_t thread_id;
   uint8_t key_size;
 
@@ -137,6 +131,7 @@ Server::serve(const Args& args)
 void
 Server::on_message(void* data)
 {
+  using namespace sphinx::memcache;
   auto* cmd = reinterpret_cast<Command*>(data);
   switch (cmd->op) {
     case Opcode::Set: {
@@ -208,13 +203,13 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
   using namespace sphinx::memcache;
   Parser parser;
   size_t nr_consumed = parser.parse(msg);
-  switch (parser._state) {
-    case Parser::State::Error: {
-      static std::string error{"ERROR\r\n"};
-      respond(sock, error);
-      break;
-    }
-    case Parser::State::CmdSet: {
+  if (!parser._op) {
+    static std::string error{"ERROR\r\n"};
+    respond(sock, error);
+    return nr_consumed;
+  }
+  switch (*parser._op) {
+    case Opcode::Set: {
       size_t data_block_size = parser._blob_size + 2;
       if (msg.size() < (nr_consumed + data_block_size)) {
         nr_consumed = 0;
@@ -230,7 +225,7 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
       } else {
         Command* cmd = new Command();
         cmd->sock = sock;
-        cmd->op = Opcode::Set;
+        cmd->op = *parser._op;
         cmd->key_size = key.size();
         cmd->buffer.append(key);
         cmd->buffer.append(blob);
@@ -239,7 +234,7 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
       }
       break;
     }
-    case Parser::State::CmdGet: {
+    case Opcode::Get: {
       const auto& key = parser.key();
       auto hash = sphinx::logmem::Object::hash_of(key);
       auto target_id = find_target(hash);
@@ -248,7 +243,7 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
       } else {
         Command* cmd = new Command();
         cmd->sock = sock;
-        cmd->op = Opcode::Get;
+        cmd->op = *parser._op;
         cmd->key_size = key.size();
         cmd->buffer.append(key);
         cmd->thread_id = _reactor->thread_id();

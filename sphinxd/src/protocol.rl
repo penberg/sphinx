@@ -46,9 +46,9 @@ exptime = number %{ _expiration = _number; };
 
 bytes = number %{ _blob_size = _number; };
 
-set = "set" space key space flags space exptime space bytes space? crlf @blob_start @{ _state = State::CmdSet; };
+set = "set" space key space flags space exptime space bytes space? crlf @blob_start @{ _op = Opcode::Set; };
 
-get = "get" space key crlf @{ _state = State::CmdGet; };
+get = "get" space key crlf @{ _op = Opcode::Get; };
 
 main := (set | get);
 
@@ -58,19 +58,18 @@ namespace sphinx::memcache {
 
 %% write data nofinal noprefix;
 
+enum class Opcode
+{
+  Set,
+  Get,
+};
+
 class Parser
 {
   int _fsm_cs;
 
 public:
-  enum class State
-  {
-    Error,
-    CmdSet,
-    CmdGet,
-  };
-
-  State _state = State::Error;
+  std::optional<Opcode> _op;
   const char* _key_start = nullptr;
   const char* _key_end = nullptr;
   uint64_t _number = 0;

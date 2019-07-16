@@ -24,7 +24,7 @@ TEST(ProtocolTest, parse_error)
   std::string msg = "foo";
   Parser parser;
   parser.parse(msg);
-  ASSERT_EQ(parser._state, Parser::State::Error);
+  ASSERT_EQ(bool(parser._op), false);
 }
 
 TEST(ProtocolTest, parse_set)
@@ -33,7 +33,7 @@ TEST(ProtocolTest, parse_set)
   std::string msg = "set foo 0 0 3\r\nbar\r\n";
   Parser parser;
   parser.parse(msg);
-  ASSERT_EQ(parser._state, Parser::State::CmdSet);
+  ASSERT_EQ(*parser._op, Opcode::Set);
 }
 
 TEST(ProtocolTest, parse_get)
@@ -42,7 +42,7 @@ TEST(ProtocolTest, parse_get)
   std::string msg = "get foo\r\n";
   Parser parser;
   parser.parse(msg);
-  ASSERT_EQ(parser._state, Parser::State::CmdGet);
+  ASSERT_EQ(*parser._op, Opcode::Get);
 }
 
 TEST(ProtocolTest, parse_many)
@@ -54,7 +54,7 @@ TEST(ProtocolTest, parse_many)
     Parser parser;
     auto nr_consumed = parser.parse(msg);
     ASSERT_EQ(15, nr_consumed);
-    ASSERT_EQ(parser._state, Parser::State::CmdSet);
+    ASSERT_EQ(parser._op, Opcode::Set);
     ASSERT_EQ(3, parser._blob_size);
     msg.remove_prefix(nr_consumed + parser._blob_size + 2);
   }
@@ -62,6 +62,6 @@ TEST(ProtocolTest, parse_many)
     Parser parser;
     auto nr_consumed = parser.parse(msg);
     ASSERT_EQ(9, nr_consumed);
-    ASSERT_EQ(parser._state, Parser::State::CmdGet);
+    ASSERT_EQ(*parser._op, Opcode::Get);
   }
 }
