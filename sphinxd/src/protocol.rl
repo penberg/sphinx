@@ -46,11 +46,15 @@ exptime = number %{ _expiration = _number; };
 
 bytes = number %{ _blob_size = _number; };
 
+storage_cmd = space key space flags space exptime space bytes space? crlf @blob_start;
+
 set = "set" space key space flags space exptime space bytes space? crlf @blob_start @{ _op = Opcode::Set; };
+
+add = "add" space key space flags space exptime space bytes space? crlf @blob_start @{ _op = Opcode::Add; };
 
 get = "get" space key crlf @{ _op = Opcode::Get; };
 
-main := (set | get);
+main := (set | add | get);
 
 }%%
 
@@ -61,6 +65,7 @@ namespace sphinx::memcache {
 enum class Opcode
 {
   Set,
+  Add,
   Get,
 };
 
