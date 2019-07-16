@@ -102,6 +102,7 @@ private:
   size_t process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::string_view msg);
   void cmd_set(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key, std::string_view blob);
   void cmd_add(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key, std::string_view blob);
+  void cmd_replace(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key, std::string_view blob);
   void cmd_get(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key);
   void respond(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view msg);
   size_t find_target(const sphinx::logmem::Hash& hash) const;
@@ -142,6 +143,11 @@ Server::on_message(void* data)
     }
     case Opcode::Add: {
       cmd_add(cmd->sock, cmd->key(), cmd->blob());
+      delete cmd;
+      break;
+    }
+    case Opcode::Replace: {
+      cmd_replace(cmd->sock, cmd->key(), cmd->blob());
       delete cmd;
       break;
     }
@@ -216,7 +222,8 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
   }
   switch (*parser._op) {
     case Opcode::Set:
-    case Opcode::Add: {
+    case Opcode::Add:
+    case Opcode::Replace: {
       size_t data_block_size = parser._blob_size + 2;
       if (msg.size() < (nr_consumed + data_block_size)) {
         nr_consumed = 0;
@@ -231,6 +238,7 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
 	switch (*parser._op) {
 	case Opcode::Set: cmd_set(sock, key, blob); break;
 	case Opcode::Add: cmd_add(sock, key, blob); break;
+	case Opcode::Replace: cmd_replace(sock, key, blob); break;
 	default: assert(0);
 	}
       } else {
@@ -282,6 +290,23 @@ void
 Server::cmd_add(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key, std::string_view blob)
 {
   if (bool(this->_log.find(key))) {
+    static std::string not_stored{"NOT_STORED\r\n"};
+    respond(sock, not_stored);
+    return;
+  }
+  if (this->_log.append(key, blob)) {
+    static std::string stored{"STORED\r\n"};
+    respond(sock, stored);
+  } else {
+    static std::string out_of_memory{"SERVER_ERROR out of memory storing object\r\n"};
+    respond(sock, out_of_memory);
+  }
+}
+
+void
+Server::cmd_replace(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key, std::string_view blob)
+{
+  if (!bool(this->_log.find(key))) {
     static std::string not_stored{"NOT_STORED\r\n"};
     respond(sock, not_stored);
     return;

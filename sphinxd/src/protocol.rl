@@ -52,9 +52,11 @@ set = "set" space key space flags space exptime space bytes space? crlf @blob_st
 
 add = "add" space key space flags space exptime space bytes space? crlf @blob_start @{ _op = Opcode::Add; };
 
+replace = "replace" space key space flags space exptime space bytes space? crlf @blob_start @{ _op = Opcode::Replace; };
+
 get = "get" space key crlf @{ _op = Opcode::Get; };
 
-main := (set | add | get);
+main := (set | add | replace | get);
 
 }%%
 
@@ -66,6 +68,7 @@ enum class Opcode
 {
   Set,
   Add,
+  Replace,
   Get,
 };
 
