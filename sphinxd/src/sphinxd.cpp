@@ -61,10 +61,7 @@ struct Args
 enum class Opcode : uint8_t
 {
   Set,
-  SetOk,
-  SetErrorOutOfMemory,
   Get,
-  GetOk,
 };
 
 struct Command
@@ -142,47 +139,30 @@ Server::on_message(void* data)
   switch (cmd->op) {
     case Opcode::Set: {
       if (this->_log.append(cmd->key(), cmd->blob())) {
-        cmd->op = Opcode::SetOk;
+        static std::string stored{"STORED\r\n"};
+        respond(cmd->sock, stored);
       } else {
-        cmd->op = Opcode::SetErrorOutOfMemory;
+        static std::string out_of_memory{"SERVER_ERROR out of memory storing object\r\n"};
+        respond(cmd->sock, out_of_memory);
       }
-      assert(_reactor->send_msg(cmd->thread_id, cmd));
-      break;
-    }
-    case Opcode::SetOk: {
-      static std::string stored{"STORED\r\n"};
-      respond(cmd->sock, stored);
-      delete cmd;
-      break;
-    }
-    case Opcode::SetErrorOutOfMemory: {
-      static std::string out_of_memory{"SERVER_ERROR out of memory storing object\r\n"};
-      respond(cmd->sock, out_of_memory);
       delete cmd;
       break;
     }
     case Opcode::Get: {
+      std::string response;
       const auto& key = cmd->key();
       auto search = _log.find(key);
-      std::string response;
       if (search) {
         const auto& value = *search;
-        cmd->buffer.append(value);
-      }
-      cmd->op = Opcode::GetOk;
-      assert(_reactor->send_msg(cmd->thread_id, cmd)); // FIXME
-      break;
-    }
-    case Opcode::GetOk: {
-      std::string response;
-      if (!cmd->blob().empty()) {
-        response += "VALUE ";
-        response += cmd->key();
-        response += " 0 ";
-        response += sphinx::to_string(cmd->blob().size());
-        response += "\r\n";
-        response += cmd->blob();
-        response += "\r\n";
+        if (!value.empty()) {
+          response += "VALUE ";
+          response += key;
+          response += " 0 ";
+          response += sphinx::to_string(value.size());
+          response += "\r\n";
+          response += value;
+          response += "\r\n";
+        }
       }
       response += "END\r\n";
       respond(cmd->sock, response);
