@@ -17,6 +17,7 @@ limitations under the License.
 #include <sphinx/reactor-epoll.h>
 
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <unistd.h>
 
 #include <stdexcept>
@@ -24,16 +25,41 @@ limitations under the License.
 
 namespace sphinx::reactor {
 
+class Eventfd : public Pollable
+{
+  int _efd;
+
+public:
+  explicit Eventfd(int efd)
+    : _efd{efd}
+  {
+  }
+
+  int fd() const override
+  {
+    return _efd;
+  }
+
+  void on_pollin() override
+  {
+    eventfd_t unused;
+    if (::eventfd_read(_efd, &unused) < 0) {
+      throw std::system_error(errno, std::system_category(), "eventfd_read");
+    }
+  }
+  bool on_pollout() override
+  {
+    return false;
+  }
+};
+
 EpollReactor::EpollReactor(size_t thread_id, size_t nr_threads, OnMessageFn&& on_message_fn)
   : Reactor{thread_id, nr_threads, std::move(on_message_fn)}
   , _epollfd{::epoll_create1(0)}
 {
-  epoll_event ev = {};
-  ev.data.ptr = nullptr;
-  ev.events = EPOLLIN | EPOLLET;
-  if (epoll_ctl(_epollfd, EPOLL_CTL_ADD, _efd, &ev) < 0) {
-    throw std::system_error(errno, std::system_category(), "epoll_ctl");
-  }
+  auto eventfd = std::make_shared<Eventfd>(_efd);
+  update_epoll(eventfd.get(), EPOLLIN);
+  _pollables.emplace(eventfd->fd(), eventfd);
 }
 
 EpollReactor::~EpollReactor()
