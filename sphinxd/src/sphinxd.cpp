@@ -106,6 +106,7 @@ private:
             std::shared_ptr<sphinx::reactor::TcpSocket> sock,
             std::string_view msg);
   size_t process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::string_view msg);
+  void cmd_set(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key, std::string_view blob);
   void respond(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view msg);
   size_t find_target(const sphinx::logmem::Hash& hash) const;
 };
@@ -138,13 +139,7 @@ Server::on_message(void* data)
   auto* cmd = reinterpret_cast<Command*>(data);
   switch (cmd->op) {
     case Opcode::Set: {
-      if (this->_log.append(cmd->key(), cmd->blob())) {
-        static std::string stored{"STORED\r\n"};
-        respond(cmd->sock, stored);
-      } else {
-        static std::string out_of_memory{"SERVER_ERROR out of memory storing object\r\n"};
-        respond(cmd->sock, out_of_memory);
-      }
+      cmd_set(cmd->sock, cmd->key(), cmd->blob());
       delete cmd;
       break;
     }
@@ -246,13 +241,7 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
       auto target_id = find_target(hash);
       std::string_view blob{parser._blob_start, parser._blob_size};
       if (target_id == _reactor->thread_id()) {
-        if (this->_log.append(key, blob)) {
-          static std::string stored{"STORED\r\n"};
-          respond(sock, stored);
-        } else {
-          static std::string out_of_memory{"SERVER_ERROR out of memory storing object\r\n"};
-          respond(sock, out_of_memory);
-        }
+	cmd_set(sock, key, blob);
       } else {
         Command* cmd = new Command();
         cmd->sock = sock;
@@ -297,6 +286,18 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
     }
   }
   return nr_consumed;
+}
+
+void
+Server::cmd_set(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key, std::string_view blob)
+{
+  if (this->_log.append(key, blob)) {
+    static std::string stored{"STORED\r\n"};
+    respond(sock, stored);
+  } else {
+    static std::string out_of_memory{"SERVER_ERROR out of memory storing object\r\n"};
+    respond(sock, out_of_memory);
+  }
 }
 
 void
