@@ -107,6 +107,7 @@ private:
             std::string_view msg);
   size_t process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::string_view msg);
   void cmd_set(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key, std::string_view blob);
+  void cmd_get(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key);
   void respond(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view msg);
   size_t find_target(const sphinx::logmem::Hash& hash) const;
 };
@@ -144,23 +145,7 @@ Server::on_message(void* data)
       break;
     }
     case Opcode::Get: {
-      std::string response;
-      const auto& key = cmd->key();
-      auto search = _log.find(key);
-      if (search) {
-        const auto& value = *search;
-        if (!value.empty()) {
-          response += "VALUE ";
-          response += key;
-          response += " 0 ";
-          response += sphinx::to_string(value.size());
-          response += "\r\n";
-          response += value;
-          response += "\r\n";
-        }
-      }
-      response += "END\r\n";
-      respond(cmd->sock, response);
+      cmd_get(cmd->sock, cmd->key());
       delete cmd;
       break;
     }
@@ -259,20 +244,7 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
       auto hash = sphinx::logmem::Object::hash_of(key);
       auto target_id = find_target(hash);
       if (target_id == _reactor->thread_id()) {
-        std::string response;
-        auto search = this->_log.find(key);
-        if (search) {
-          const auto& value = search.value();
-          response += "VALUE ";
-          response += key;
-          response += " 0 ";
-          response += sphinx::to_string(value.size());
-          response += "\r\n";
-          response += value;
-          response += "\r\n";
-        }
-        response += "END\r\n";
-        respond(sock, response);
+	cmd_get(sock, key);
       } else {
         Command* cmd = new Command();
         cmd->sock = sock;
@@ -298,6 +270,25 @@ Server::cmd_set(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view 
     static std::string out_of_memory{"SERVER_ERROR out of memory storing object\r\n"};
     respond(sock, out_of_memory);
   }
+}
+
+void
+Server::cmd_get(std::shared_ptr<sphinx::reactor::Socket> sock, std::string_view key)
+{
+  std::string response;
+  auto search = this->_log.find(key);
+  if (search) {
+    const auto& value = search.value();
+    response += "VALUE ";
+    response += key;
+    response += " 0 ";
+    response += sphinx::to_string(value.size());
+    response += "\r\n";
+    response += value;
+    response += "\r\n";
+  }
+  response += "END\r\n";
+  respond(sock, response);
 }
 
 void
