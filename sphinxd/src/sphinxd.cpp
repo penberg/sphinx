@@ -136,6 +136,8 @@ Server::on_message(void* data)
   using namespace sphinx::memcache;
   auto* cmd = reinterpret_cast<Command*>(data);
   switch (cmd->op) {
+    case Opcode::Version:
+      assert(0);
     case Opcode::Set: {
       cmd_set(cmd->sock, cmd->key(), cmd->blob());
       delete cmd;
@@ -221,6 +223,12 @@ Server::process_one(std::shared_ptr<sphinx::reactor::TcpSocket> sock, std::strin
     return nr_consumed;
   }
   switch (*parser._op) {
+    case Opcode::Version: {
+      static std::string error{"VERSION 1.5.16\r\n"};
+      respond(sock, error);
+      return nr_consumed;
+      break;
+    }
     case Opcode::Set:
     case Opcode::Add:
     case Opcode::Replace: {

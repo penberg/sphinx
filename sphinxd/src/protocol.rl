@@ -56,7 +56,9 @@ replace = "replace" space key space flags space exptime space bytes space? crlf 
 
 get = "get" space key crlf @{ _op = Opcode::Get; };
 
-main := (set | add | replace | get);
+version = "version" crlf @{ _op = Opcode::Version; };
+
+main := (set | add | replace | get | version);
 
 }%%
 
@@ -70,6 +72,7 @@ enum class Opcode
   Add,
   Replace,
   Get,
+  Version,
 };
 
 class Parser
